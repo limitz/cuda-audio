@@ -1,3 +1,4 @@
+#include <cufft.h>
 #include <iostream>
 
 #include "gpu.h"
@@ -16,14 +17,50 @@ __global__ static void f_makeTone(float* output, size_t channels, size_t samples
 	auto d = (float2*)output;
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
-		float a = (t + s) % sr;
-		float b = v * fmaf(sinpif(a/8000), sinpif(a/40), 1);
-		d[s] = {-b,b};
+		float a1 = (t + s) % sr;
+		float a2 = (t + s + (sr >> 1)) % sr;
+		float b1 = v * fmaf(powf((sr-a1)/sr,10), fmodf(a1/40,2), -1);
+		float b2 = v * fmaf(powf((sr-a2)/sr,10), fmodf(a2/40,2), -1);
+		d[s] = {b1,b2};
 	}
 }
 
 class MainHandler : public MidiDevice::Handler, public AudioDevice::Handler
 {
+public:
+	MainHandler() :
+		_fftSize(0),
+		_a(nullptr), _afft(nullptr),
+		_b(nullptr), _bfft(nullptr),
+		_r(nullptr), _rfft(nullptr)
+	{
+	}
+
+	void prepare(size_t size, size_t channels)
+	{
+		int rc;
+		assert(!_fftSize);
+		assert(size > 0);
+		assert(channels > 0);
+
+		_fftSize = size * channels * sizeof(cufftComplex);
+		rc = cudaMalloc(&_a, _fftSize);
+		assert(0 == rc);
+		rc = cudaMalloc(&_b, _fftSize);
+		assert(0 == rc);
+		rc = cudaMalloc(&_r, _fftSize);
+		assert(0 == rc);
+
+		rc = cudaMalloc(&_afft, _fftSize);
+		assert(0 == rc);
+		rc = cudaMalloc(&_bfft, _fftSize);
+		assert(0 == rc);
+		rc = cudaMalloc(&_rfft, _fftSize);
+		assert(0 == rc);
+	}
+
+	
+
 protected:
 	virtual void midiDeviceHandlerOnReceive(MidiDevice* sender, const uint8_t* buffer, size_t len) override
 	{
@@ -39,6 +76,14 @@ protected:
 		cudaStreamSynchronize(0);
 		t += frames;
 	}
+
+private:
+	cufftComplex *_a, *_afft;
+	cufftComplex *_b, *_bfft;
+	cufftComplex *_r, *_rfft;
+
+	size_t _fftSize;
+
 };
 
 int main()
