@@ -35,7 +35,7 @@ protected:
 		static size_t t = 0;
 		auto nc = sender->numChannels;
 		auto sr = sender->sampleRate;
-		f_makeTone <<< 1, frames, 0, 0 >>> (buffer, nc, frames, sr, t, 0.15f);
+		f_makeTone <<< 2, 256, 0, 0 >>> (buffer, nc, frames, sr, t, 0.15f);
 		cudaStreamSynchronize(0);
 		t += frames;
 	}
