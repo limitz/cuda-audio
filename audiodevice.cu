@@ -1,7 +1,8 @@
-#include "sounddevice.h"
+#include "audiodevice.h"
 #include <iostream>
+#include <cassert>
 
-#define TAG "SoundDevice"
+#define TAG "AudioDevice"
 
 static int xrunRecovery(snd_pcm_t* pcm, int err)
 {
@@ -15,7 +16,7 @@ static int xrunRecovery(snd_pcm_t* pcm, int err)
 		return rc;
 
 	case -ESTRPIPE:
-		//Log::warn("SoundDevice", "XRUN recovery: ESTRPIPE");
+		//Log::warn("AudioDevice", "XRUN recovery: ESTRPIPE");
 		while ((rc = snd_pcm_resume(pcm)) == -EAGAIN) usleep(100);
 		if (rc < 0) 
 		{
@@ -25,7 +26,7 @@ static int xrunRecovery(snd_pcm_t* pcm, int err)
 		return rc;
 
 	default: 
-		//Log::error("SoundDevice", "XRUN not recoverable: %d", error);
+		//Log::error("AudioDevice", "XRUN not recoverable: %d", error);
 		return err;
 	}
 }
@@ -49,12 +50,13 @@ static int waitForPoll(snd_pcm_t* pcm, struct pollfd *fd, unsigned int count)
 	}
 }
 
-#include <stdlib.h>
+//temporary
+#include <cstdlib>
 
-void* SoundDevice::proc(void* context)
+void* AudioDevice::proc(void* context)
 {
 	int rc;
-	SoundDevice* self = reinterpret_cast<SoundDevice*>(context);
+	AudioDevice* self = reinterpret_cast<AudioDevice*>(context);
 
 	self->_isRunning = true;
 
@@ -65,6 +67,7 @@ void* SoundDevice::proc(void* context)
 	pthread_setschedparam(thread, SCHED_FIFO, &sched);
 	int r = 0;
 	pthread_getschedparam(thread, &r, &sched);
+	//doesn't seem to work for now
 	//assert(SCHED_FIFO == r);
 
 	bool needsPoll = false;
@@ -77,7 +80,7 @@ void* SoundDevice::proc(void* context)
 			assert(0 == rc);
 		}
 
-		// fill buffer
+		// temporary: fill buffer
 		for (snd_pcm_uframes_t i=0; i<self->periodSize*2; i++)
 		{
 			self->_buffer[i] = (rand() / (float) RAND_MAX) * 0.3f;
@@ -109,12 +112,12 @@ void* SoundDevice::proc(void* context)
 	return nullptr;
 }
 
-void SoundDevice::start()
+void AudioDevice::start()
 {
 	int rc;
 	assert(!_isOpen);
 
-	rc = snd_pcm_open(&_pcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
+	rc = snd_pcm_open(&_pcm, deviceId.c_str(), SND_PCM_STREAM_PLAYBACK, 0);
 	assert(0 == rc);
 
 	rc = snd_pcm_nonblock(_pcm, 1);
@@ -186,11 +189,11 @@ void SoundDevice::start()
 
 	_isOpen = true;
 
-	rc = pthread_create(&_thread, NULL, SoundDevice::proc, this);
+	rc = pthread_create(&_thread, NULL, AudioDevice::proc, this);
 	assert(0 == rc);
 }
 
-void SoundDevice::stop()
+void AudioDevice::stop()
 {
 	assert(_isOpen);
 	
