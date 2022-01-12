@@ -1,24 +1,22 @@
 #pragma once
 
 #include <alsa/asoundlib.h>
-#include <pthread.h>
-#include <string>
-#include <cstdint>
-
-class MidiDeviceHandler
-{	
-protected:
-	virtual void midiDeviceHandlerOnReceive(const uint8_t* message, size_t len) = 0;
-	friend class MidiDevice;
-};
+#include "gpu.h"
 
 class MidiDevice
 {
 public:
-	const std::string deviceId;
-	MidiDeviceHandler* handler;
+	class Handler
+	{	
+	protected:
+		friend class MidiDevice;
+		virtual void midiDeviceHandlerOnReceive(MidiDevice*, const uint8_t* message, size_t len) = 0;
+	};
 
-	MidiDevice(const std::string& deviceId, MidiDeviceHandler* handler = nullptr) :
+	const std::string deviceId;
+	Handler* handler;
+
+	MidiDevice(const std::string& deviceId, Handler* handler = nullptr) :
 		deviceId(deviceId),
 		handler(handler),
 		_in(0), _out(0),

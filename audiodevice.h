@@ -1,29 +1,26 @@
 #pragma once
-
-#include <cuda_runtime.h>
 #include <alsa/asoundlib.h>
-#include <pthread.h>
-#include <string>
-
-class AudioDeviceHandler
-{
-protected:
-	virtual void audioDeviceHandlerOnOutputBuffer(float* buffer, size_t channels, size_t frames) = 0;
-	friend class AudioDevice;
-};
+#include "gpu.h"
 
 class AudioDevice
 {
 public:
+	class Handler
+	{
+	protected:
+		friend class AudioDevice;
+		virtual void audioDeviceHandlerOnOutputBuffer(AudioDevice*, float* buffer, size_t frames) = 0;
+	};
+
 	const std::string deviceId;
-	AudioDeviceHandler* handler;
+	Handler* handler;
 
 	const int numChannels = 2;
 	const int sampleRate = 48000;
-	snd_pcm_uframes_t periodSize = 256;
-	snd_pcm_uframes_t bufferSize = 512;
+	snd_pcm_uframes_t periodSize = 1024;
+	snd_pcm_uframes_t bufferSize = 2048;
 
-	AudioDevice(const std::string& deviceId, AudioDeviceHandler* handler = nullptr) : 
+	AudioDevice(const std::string& deviceId, Handler* handler = nullptr) : 
 		deviceId(deviceId),
 		handler(handler),
 		_isOpen(false), 

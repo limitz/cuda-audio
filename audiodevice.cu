@@ -1,6 +1,4 @@
 #include "audiodevice.h"
-#include <iostream>
-#include <cassert>
 
 #define TAG "AudioDevice"
 
@@ -10,23 +8,23 @@ static int xrunRecovery(snd_pcm_t* pcm, int err)
 	switch(err)
 	{
 	case -EPIPE:
-		//Log::warn(TAG, "XRUN recovery: EPIPE");
+		Log::warn(TAG, "XRUN recovery: EPIPE");
 		rc = snd_pcm_prepare(pcm);
-		//if (0 != rc) Log::error(TAG, "Unable to prepare sound device: %d", rc);
+		if (0 != rc) Log::error(TAG, "Unable to prepare sound device: %d", rc);
 		return rc;
 
 	case -ESTRPIPE:
-		//Log::warn("AudioDevice", "XRUN recovery: ESTRPIPE");
+		Log::warn("AudioDevice", "XRUN recovery: ESTRPIPE");
 		while ((rc = snd_pcm_resume(pcm)) == -EAGAIN) usleep(100);
 		if (rc < 0) 
 		{
 			rc = snd_pcm_prepare(pcm);
-			//if (0 != rc) Log::error(TAG, "Unable to prepare sound device: %d", rc);
+			if (0 != rc) Log::error(TAG, "Unable to prepare sound device: %d", rc);
 		}
 		return rc;
 
 	default: 
-		//Log::error("AudioDevice", "XRUN not recoverable: %d", error);
+		Log::error("AudioDevice", "XRUN not recoverable: %d", err);
 		return err;
 	}
 }
@@ -40,7 +38,7 @@ static int waitForPoll(snd_pcm_t* pcm, struct pollfd *fd, unsigned int count)
 		snd_pcm_poll_descriptors_revents(pcm, fd, count, &revents);
 		if (revents & POLLERR)
 		{
-			//Log::error(TAG, "Poll error");
+			Log::error(TAG, "Poll error");
 			return -EIO;
 		}
 		if (revents & POLLOUT)
@@ -49,9 +47,6 @@ static int waitForPoll(snd_pcm_t* pcm, struct pollfd *fd, unsigned int count)
 		}
 	}
 }
-
-//temporary
-#include <cstdlib>
 
 void* AudioDevice::proc(void* context)
 {
@@ -80,12 +75,11 @@ void* AudioDevice::proc(void* context)
 			assert(0 == rc);
 		}
 
-		// temporary: fill buffer
-		for (snd_pcm_uframes_t i=0; i<self->periodSize*2; i++)
+		auto h = self->handler;
+		if (h)
 		{
-			self->_buffer[i] = (rand() / (float) RAND_MAX) * 0.3f;
+			h->audioDeviceHandlerOnOutputBuffer(self, self->_buffer, self->periodSize);
 		}
-		
 
 		snd_pcm_uframes_t written = 0;
 		while (written < self->periodSize)

@@ -1,6 +1,4 @@
 #include "mididevice.h"
-#include <iostream>
-#include <cassert>
 
 static bool isValidMessage(const uint8_t* buffer, size_t len)
 {
@@ -38,7 +36,7 @@ void* MidiDevice::proc(void* context)
 			auto h = self->handler;
 			if (h)
 			{
-				h->midiDeviceHandlerOnReceive(buffer, len);
+				h->midiDeviceHandlerOnReceive(self, buffer, len);
 			}
 			else
 			{
