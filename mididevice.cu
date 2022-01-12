@@ -44,7 +44,7 @@ void* MidiDevice::proc(void* context)
 			{
 				for (size_t i=0; i<len; i++)
 				{
-					std::cout << std::hex << buffer[i];
+					std::cout << std::hex << (int)buffer[i] << " ";
 				}
 				std::cout << std::endl;
 			}

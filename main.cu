@@ -22,7 +22,7 @@ int main()
 	AudioDevice sound("default", &handler);
 	sound.start();
 
-	MidiDevice midi("hw:3,0,0", &handler);
+	MidiDevice midi("hw:3,0,0");
 	midi.start();
 
 	std::cin.get();
