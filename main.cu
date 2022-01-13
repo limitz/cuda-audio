@@ -137,13 +137,19 @@ protected:
 	virtual void audioDeviceHandlerOnOutputBuffer(AudioDevice* sender, float* buffer, size_t frames) override
 	{
 		int rc;
+		
+		cudaEvent_t started, stopped;
+		cudaEventCreate(&started);
+		cudaEventCreate(&stopped);
+
 		static size_t t = 0;
 		auto nc = sender->numChannels;
 		auto sr = sender->sampleRate;
+		cudaEventRecord(started, _streams[0]);
 		cudaMemset(_a, 0, _fftSize * sizeof(cufftComplex));
 		f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, 0.15f);
-		f_makeImpulseResponse <<< 64, 256, 0, _streams[1] >>> (_b1, _fftSize, sr, _delay, 0, 1.0f);
-		f_makeImpulseResponse <<< 64, 256, 0, _streams[2] >>> (_b2, _fftSize, sr, _delay, _delay/2, 1.0f);
+		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b1, _fftSize, sr, _delay, 0, 1.0f);
+		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b2, _fftSize, sr, _delay, _delay/2, 1.0f);
 		cufftSetStream(_plan, _streams[0]);
 
 		rc = cufftExecC2C(_plan, _a, _afft, CUFFT_FORWARD);
@@ -170,9 +176,17 @@ protected:
 		rc = cudaMemcpyAsync(buffer, _a, frames*sizeof(cufftComplex), cudaMemcpyDeviceToHost, _streams[0]);
 		assert(cudaSuccess == rc);
 
+		cudaEventRecord(stopped, _streams[0]);
+
 		rc = cudaStreamSynchronize(_streams[0]);
 		assert(cudaSuccess == rc);
 		t += frames;
+	
+		float elapsed;
+		rc = cudaEventElapsedTime(&elapsed, started, stopped);
+		assert(cudaSuccess == rc);
+
+		std::cout << elapsed << std::endl;
 	}
 
 private:
