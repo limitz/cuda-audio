@@ -16,7 +16,7 @@ __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t s
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
 		float a1 = (t + s) % sr;
-		float b1 = v * fmaf(powf((sr-a1)/sr,10), fmodf(a1/40,2), -1);
+		float b1 = v * fmaf(powf((sr-a1)/sr,100), fmodf(a1/40,2), -1);
 		output[s] = {b1,0};
 	}
 }
@@ -31,7 +31,7 @@ __global__ static void f_makeImpulseResponse(cufftComplex* output, size_t sample
 
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
-		output[s] ={s <5? 1.0f : 0, 0};
+		output[s] ={s == 0 || s == 12000 ? 1.0f : 0, 0};
 	}
 }
 
@@ -134,7 +134,7 @@ protected:
 		auto sr = sender->sampleRate;
 		cudaMemset(_a, 0, _fftSize * sizeof(cufftComplex));
 		f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, 0.15f);
-		f_makeImpulseResponse <<< 4, 256, 0, _streams[1] >>> (_b, 4096, sr, 0, 1.0f);
+		f_makeImpulseResponse <<< 16, 256, 0, _streams[1] >>> (_b, _fftSize, sr, 0, 1.0f);
 		cudaStreamSynchronize(_streams[0]);
 		cudaStreamSynchronize(_streams[1]);
 		cufftSetStream(_plan, _streams[0]);
@@ -149,11 +149,11 @@ protected:
 		rc = cufftExecC2C(_plan, _rfft, _r, CUFFT_INVERSE);
 		assert(cudaSuccess == rc);
 
-		f_pointwiseAdd <<< 4, 256, 0, _streams[0] >>> (_a, _r, _residual, _fftSize);
+		f_pointwiseAdd <<< 4, 256, 0, _streams[0] >>> (_r, _r, _residual, _fftSize-frames);
 
 		rc = cudaMemcpyAsync(_residual, _r+frames, (_fftSize - frames) * sizeof(cufftComplex), cudaMemcpyDeviceToDevice, _streams[0]);
 		assert(cudaSuccess == rc);
-		rc = cudaMemcpyAsync(buffer, _a, frames*sizeof(cufftComplex), cudaMemcpyDeviceToHost, _streams[0]);
+		rc = cudaMemcpyAsync(buffer, _r, frames*sizeof(cufftComplex), cudaMemcpyDeviceToHost, _streams[0]);
 		assert(cudaSuccess == rc);
 
 		rc = cudaStreamSynchronize(_streams[0]);
@@ -178,7 +178,7 @@ int main()
 	selectGpu();
 
 	MainHandler handler;
-	handler.prepare(4096, 2);
+	handler.prepare(48000, 2);
 
 	AudioDevice sound("default", &handler);
 	sound.start();
