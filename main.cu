@@ -16,7 +16,7 @@ __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t s
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
 		float a1 = (t + s) % sr;
-		float b1 = v * fmaf(powf((sr-a1)/sr,100), fmodf(a1/40,2), -1);
+		float b1 = v * fmaf(powf((sr-a1)/sr,10), fmodf(a1/40,2), -1);
 		output[s] = {b1,0};
 	}
 }
@@ -31,7 +31,7 @@ __global__ static void f_makeImpulseResponse(cufftComplex* output, size_t sample
 
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
-		output[s] ={s == 0 || s == 12000 ? 1.0f : 0, 0};
+		output[s] ={(s % t) == 0 ? 1.0f / (1+s/t) : 0,  ((s + t/2) % t) == 0 ? 1.0f / (1+s/t) : 0.0f};
 	}
 }
 
@@ -44,7 +44,7 @@ __global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* a, co
 	{
 		auto va = a[s];
 		auto vb = b[s];
-		r[s] = {va.x + vb.x, 0};
+		r[s] = {va.x + vb.x, va.y + vb.y};
 	}
 }
 
@@ -123,7 +123,7 @@ public:
 protected:
 	virtual void midiDeviceHandlerOnReceive(MidiDevice* sender, const uint8_t* buffer, size_t len) override
 	{
-		std::cout << "Received message" << std::endl;
+		if (buffer[0] == 0xB0 && buffer[1] == 0x15) _delay = 200 + 16000 * buffer[2] / 0x80;
 	}
 
 	virtual void audioDeviceHandlerOnOutputBuffer(AudioDevice* sender, float* buffer, size_t frames) override
@@ -134,7 +134,7 @@ protected:
 		auto sr = sender->sampleRate;
 		cudaMemset(_a, 0, _fftSize * sizeof(cufftComplex));
 		f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, 0.15f);
-		f_makeImpulseResponse <<< 16, 256, 0, _streams[1] >>> (_b, _fftSize, sr, 0, 1.0f);
+		f_makeImpulseResponse <<< 16, 256, 0, _streams[1] >>> (_b, _fftSize, sr, _delay, 1.0f);
 		cudaStreamSynchronize(_streams[0]);
 		cudaStreamSynchronize(_streams[1]);
 		cufftSetStream(_plan, _streams[0]);
@@ -149,7 +149,7 @@ protected:
 		rc = cufftExecC2C(_plan, _rfft, _r, CUFFT_INVERSE);
 		assert(cudaSuccess == rc);
 
-		f_pointwiseAdd <<< 4, 256, 0, _streams[0] >>> (_r, _r, _residual, _fftSize-frames);
+		f_pointwiseAdd <<< 4, 256, 0, _streams[0] >>> (_r, _r, _residual, _fftSize/2-frames);
 
 		rc = cudaMemcpyAsync(_residual, _r+frames, (_fftSize - frames) * sizeof(cufftComplex), cudaMemcpyDeviceToDevice, _streams[0]);
 		assert(cudaSuccess == rc);
@@ -162,6 +162,8 @@ protected:
 	}
 
 private:
+	size_t _delay = 8000;
+
 	cufftHandle _plan;
 	cufftComplex *_a, *_afft;
 	cufftComplex *_b, *_bfft;
@@ -183,7 +185,7 @@ int main()
 	AudioDevice sound("default", &handler);
 	sound.start();
 
-	MidiDevice midi("hw:3,0,0");
+	MidiDevice midi("hw:3,0,0", &handler);
 	midi.start();
 
 	std::cin.get();

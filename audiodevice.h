@@ -17,8 +17,8 @@ public:
 
 	const int numChannels = 2;
 	const int sampleRate = 48000;
-	snd_pcm_uframes_t periodSize = 1024;
-	snd_pcm_uframes_t bufferSize = 2048;
+	snd_pcm_uframes_t periodSize = 1024*4;
+	snd_pcm_uframes_t bufferSize = 2048*4;
 
 	AudioDevice(const std::string& deviceId, Handler* handler = nullptr) : 
 		deviceId(deviceId),
