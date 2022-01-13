@@ -31,7 +31,7 @@ __global__ static void f_makeImpulseResponse(cufftComplex* output, size_t sample
 
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
-		output[s] = {s == 1 ? 1.0f : 0};
+		output[s] ={s == 1 ? 1.0f : 0, 0};
 	}
 }
 
@@ -44,7 +44,7 @@ __global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* a, co
 	{
 		auto va = a[s];
 		auto vb = b[s];
-		r[s] = va + vb;
+		r[s] = va;// + vb;
 	}
 }
 
@@ -87,7 +87,7 @@ public:
 		assert(size > 0);
 		assert(channels > 0);
 
-		auto fftSize = size * sizeof(cufftComplex);
+		auto fftSize = size * sizeof(cufftComplex) * 2;
 		rc = cudaMalloc(&_a, fftSize);
 		assert(0 == rc);
 		rc = cudaMalloc(&_b, fftSize);
@@ -103,7 +103,8 @@ public:
 		assert(0 == rc);
 		rc = cudaMalloc(&_residual, fftSize);
 		assert(0 == rc);
-	
+
+		cudaMemset(_residual, 0, fftSize);
 		_fftSize = size;
 		int n[] = { (int)_fftSize };
 		int iembed[] = { (int)_fftSize };
@@ -131,6 +132,7 @@ protected:
 		static size_t t = 0;
 		auto nc = sender->numChannels;
 		auto sr = sender->sampleRate;
+		cudaMemset(_a, 0, _fftSize * sizeof(cufftComplex));
 		f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, 0.15f);
 		f_makeImpulseResponse <<< 4, 256, 0, _streams[1] >>> (_b, 4096, sr, 0, 1.0f);
 		cudaStreamSynchronize(_streams[0]);
@@ -141,18 +143,17 @@ protected:
 		assert(cudaSuccess == rc);
 		rc = cufftExecC2C(_plan, _b, _bfft, CUFFT_FORWARD);
 		assert(cudaSuccess == rc);
-
-		rc = cudaMemcpyAsync(_residual, _r+frames, frames*sizeof(cufftComplex), cudaMemcpyDeviceToDevice, _streams[0]);
-		assert(cudaSuccess == rc);
 		
 		f_pointwiseMultiply <<< 8, 256, 0, _streams[0] >>> (_rfft, _afft, _bfft, _fftSize);
 		
 		rc = cufftExecC2C(_plan, _rfft, _r, CUFFT_INVERSE);
 		assert(cudaSuccess == rc);
 
-		f_pointwiseAdd <<< 4, 256, 0, _streams[0] >>> (_a, _r, _residual, frames);
+		f_pointwiseAdd <<< 4, 256, 0, _streams[0] >>> (_a, _r, _residual, _fftSize);
 
-		rc = cudaMemcpyAsync(buffer, _r, frames*sizeof(cufftComplex), cudaMemcpyDeviceToHost, _streams[0]);
+		rc = cudaMemcpyAsync(_residual, _r+frames, frames * sizeof(cufftComplex), cudaMemcpyDeviceToDevice, _streams[0]);
+		assert(cudaSuccess == rc);
+		rc = cudaMemcpyAsync(buffer, _a, frames*sizeof(cufftComplex), cudaMemcpyDeviceToHost, _streams[0]);
 		assert(cudaSuccess == rc);
 
 		rc = cudaStreamSynchronize(_streams[0]);
