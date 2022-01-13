@@ -16,7 +16,7 @@ __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t s
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
 		float a1 = (t + s) % sr;
-		float b1 = v * fmaf(powf((sr-a1)/sr,20), fmodf(a1/80,2), -1);
+		float b1 = v * fmaf(powf((sr-a1)/sr,20), fmodf(a1/(50+s/200),2), -1);
 		output[s] = {b1,0};
 	}
 }
@@ -192,9 +192,9 @@ protected:
 	}
 
 private:
-	size_t _delay = 16000;
-	size_t _lp = 16;
-	size_t _vol = 0x40;
+	size_t _delay = 1600;
+	size_t _lp = 8;
+	size_t _vol = 0x30;
 
 	cufftHandle _plan;
 	cufftComplex *_a, *_afft;
