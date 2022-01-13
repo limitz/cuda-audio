@@ -16,7 +16,7 @@ __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t s
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
 		float a1 = (t + s) % sr;
-		float b1 = v * fmaf(powf((sr-a1)/sr,20), fmodf(a1/(50+s/200),2), -1);
+		float b1 = v * fmaf(powf(0.1f + 0.9f*(sr-a1)/sr,4), fmodf(a1/(50+s/200),2), -1);
 		output[s] = {b1,0};
 	}
 }
@@ -89,7 +89,7 @@ public:
 		assert(size > 0);
 		assert(channels > 0);
 
-		auto fftSize = size * sizeof(cufftComplex) * 2;
+		auto fftSize = size * sizeof(cufftComplex);
 		rc = cudaMalloc(&_a, fftSize);
 		assert(0 == rc);
 		rc = cudaMalloc(&_b1, fftSize);
@@ -150,8 +150,8 @@ protected:
 		cudaEventRecord(started, _streams[0]);
 		cudaMemset(_a, 0, _fftSize * sizeof(cufftComplex));
 		f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, _vol / 256.0f);
-		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b1, _fftSize, sr, _delay, 0, _lp, 1.0f);
-		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b2, _fftSize, sr, _delay, _delay/2, _lp, 1.0f);
+		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b1, _fftSize-frames, sr, _delay, 0, _lp, 1.0f);
+		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b2, _fftSize-frames, sr, _delay, _delay/2, _lp, 1.0f);
 		cufftSetStream(_plan, _streams[0]);
 
 		rc = cufftExecC2C(_plan, _a, _afft, CUFFT_FORWARD);
@@ -218,7 +218,7 @@ int main()
 	AudioDevice sound("default", &handler);
 	sound.start();
 
-	MidiDevice midi("hw:3,0,0", &handler);
+	MidiDevice midi("hw:2,0,0", &handler);
 	midi.start();
 
 	std::cin.get();

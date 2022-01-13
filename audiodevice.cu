@@ -68,6 +68,8 @@ void* AudioDevice::proc(void* context)
 	bool needsPoll = false;
 	while (self->_isRunning)
 	{
+		size_t requestFrames = self->periodSize*2;
+
 		assert(self->_isOpen);
 		if (needsPoll)
 		{
@@ -78,16 +80,16 @@ void* AudioDevice::proc(void* context)
 		auto h = self->handler;
 		if (h)
 		{
-			h->audioDeviceHandlerOnOutputBuffer(self, self->_buffer, self->periodSize);
+			h->audioDeviceHandlerOnOutputBuffer(self, self->_buffer, requestFrames);
 		}
 
 		snd_pcm_uframes_t written = 0;
-		while (written < self->periodSize)
+		while (written < requestFrames)
 		{	
 			rc = snd_pcm_writei(
 					self->_pcm, 
 					self->_buffer + written * self->numChannels, 
-					self->periodSize - written);
+					min(self->periodSize, requestFrames - written));
 			if (rc < 0)
 			{
 				rc = xrunRecovery(self->_pcm, rc);
@@ -96,7 +98,7 @@ void* AudioDevice::proc(void* context)
 			}
 			needsPoll = true;
 			written += rc;
-			if (written <= 0) break;
+			if (written >= requestFrames) break;
 		
 			rc = waitForPoll(self->_pcm, self->_poll.fd, self->_poll.count);
 			assert(0 == rc);
@@ -177,7 +179,7 @@ void AudioDevice::start()
 
 	snd_pcm_poll_descriptors(_pcm, _poll.fd, _poll.count);
 
-	rc = cudaHostAlloc(&_buffer, periodSize * numChannels * sizeof(float), cudaHostAllocMapped);
+	rc = cudaHostAlloc(&_buffer, bufferSize * numChannels * sizeof(float), cudaHostAllocMapped);
 	assert(rc == 0);
 	assert(_buffer);
 
