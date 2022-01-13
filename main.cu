@@ -31,7 +31,7 @@ __global__ static void f_makeImpulseResponse(cufftComplex* output, size_t sample
 
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
-		output[s] ={s == 1 ? 1.0f : 0, 0};
+		output[s] ={s <5? 1.0f : 0, 0};
 	}
 }
 
@@ -44,7 +44,7 @@ __global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* a, co
 	{
 		auto va = a[s];
 		auto vb = b[s];
-		r[s] = va + vb;
+		r[s] = {va.x + vb.x, 0};
 	}
 }
 
@@ -151,7 +151,7 @@ protected:
 
 		f_pointwiseAdd <<< 4, 256, 0, _streams[0] >>> (_a, _r, _residual, _fftSize);
 
-		rc = cudaMemcpyAsync(_residual, _r+frames, frames * sizeof(cufftComplex), cudaMemcpyDeviceToDevice, _streams[0]);
+		rc = cudaMemcpyAsync(_residual, _r+frames, (_fftSize - frames) * sizeof(cufftComplex), cudaMemcpyDeviceToDevice, _streams[0]);
 		assert(cudaSuccess == rc);
 		rc = cudaMemcpyAsync(buffer, _a, frames*sizeof(cufftComplex), cudaMemcpyDeviceToHost, _streams[0]);
 		assert(cudaSuccess == rc);
