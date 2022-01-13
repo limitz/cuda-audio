@@ -44,7 +44,7 @@ __global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* a, co
 	{
 		auto va = a[s];
 		auto vb = b[s];
-		r[s] = va;// + vb;
+		r[s] = va + vb;
 	}
 }
 
