@@ -39,7 +39,7 @@ void* MidiDevice::proc(void* context)
 			{
 				h->midiDeviceHandlerOnReceive(self, buffer, len);
 			}
-			else
+			//else
 			{
 				for (size_t i=0; i<len; i++)
 				{

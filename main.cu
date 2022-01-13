@@ -4,20 +4,33 @@
 #include "gpu.h"
 #include "audiodevice.h"
 #include "mididevice.h"
+#include "wav.h"
+
+static WavFile* wav[8];
 
 __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t sr, size_t t, float v)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
-	assert(1 == stride.y);
-	assert(0 == offset.y);
-
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
 		float a1 = (t + s) % sr;
-		float b1 = v * fmaf(powf(0.1f + 0.9f*(sr-a1)/sr,4), fmodf(a1/(50+s/200),2), -1);
+		float b1 = v * fmaf(powf(0.1f + 0.9f*(sr-a1)/sr,5), fmodf(a1/(50+s),2), -1);
 		output[s] = {b1,0};
+	}
+}
+
+__global__ static void f_deinterleaveIR(cufftComplex* d1, cufftComplex* d2, float2* src, size_t n)
+{
+	auto stride = gridDim * blockDim;
+	auto offset = blockDim * blockIdx + threadIdx;
+
+	for (auto s = offset.x; s < n; s += stride.x)
+	{
+		float2 v = src[s];
+		d1[s] = {v.x, 0};
+		d2[s] = {v.y, 0};
 	}
 }
 
@@ -25,9 +38,6 @@ __global__ static void f_makeImpulseResponse(cufftComplex* output, size_t sample
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
-
-	assert(1 == stride.y);
-	assert(0 == offset.y);
 
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
@@ -134,6 +144,8 @@ protected:
 		if (buffer[0] == 0xB0 && buffer[1] == 0x15) _delay = 200 + 16000 * buffer[2] / 0x80;
 		if (buffer[0] == 0xB0 && buffer[1] == 0x16) _lp = 1 + buffer[2];
 		if (buffer[0] == 0xB0 && buffer[1] == 0x17) _vol = buffer[2];
+		
+		if (buffer[0] == 0x90 && buffer[1] == 0x09) _widx = (_widx+1) % 8;
 	}
 
 	virtual void audioDeviceHandlerOnOutputBuffer(AudioDevice* sender, float* buffer, size_t frames) override
@@ -150,8 +162,10 @@ protected:
 		cudaEventRecord(started, _streams[0]);
 		cudaMemset(_a, 0, _fftSize * sizeof(cufftComplex));
 		f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, _vol / 256.0f);
-		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b1, _fftSize-frames, sr, _delay, 0, _lp, 1.0f);
-		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b2, _fftSize-frames, sr, _delay, _delay/2, _lp, 1.0f);
+		f_deinterleaveIR <<< 32, 256, 0, _streams[0] >>> (_b1, _b2, wav[_widx]->buffer, min(wav[_widx]->numFrames, _fftSize - frames));
+
+		//f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b1, _fftSize-frames, sr, _delay, 0, _lp, 1.0f);
+		//f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b2, _fftSize-frames, sr, _delay, _delay/2, _lp, 1.0f);
 		cufftSetStream(_plan, _streams[0]);
 
 		rc = cufftExecC2C(_plan, _a, _afft, CUFFT_FORWARD);
@@ -194,8 +208,8 @@ protected:
 private:
 	size_t _delay = 1600;
 	size_t _lp = 8;
-	size_t _vol = 0x30;
-
+	size_t _vol = 0x10;
+	size_t _widx = 0;
 	cufftHandle _plan;
 	cufftComplex *_a, *_afft;
 	cufftComplex *_b1, *_b1fft;
@@ -212,19 +226,30 @@ int main()
 {
 	selectGpu();
 
+	wav[0] = new WavFile("ir1.wav");
+	wav[1] = new WavFile("ir2.wav");
+	wav[2] = new WavFile("ir3.wav");
+	wav[3] = new WavFile("ir4.wav");
+	wav[4] = new WavFile("ir5.wav");
+	wav[5] = new WavFile("ir6.wav");
+	wav[6] = new WavFile("ir7.wav");
+	wav[7] = new WavFile("ir8.wav");
+
 	MainHandler handler;
-	handler.prepare(48000, 2);
+	handler.prepare(128000, 2);
 
 	AudioDevice sound("default", &handler);
 	sound.start();
 
-	MidiDevice midi("hw:2,0,0");
+	MidiDevice midi("hw:2,0,0", &handler);
 	midi.start();
+
 
 	std::cin.get();
 
 	midi.stop();
 	sound.stop();
 	
+	for (int i=0; i< 8; i++) delete wav[i];
 	return 0;
 }

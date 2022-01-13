@@ -1,26 +1,17 @@
 #include "wav.h"
 #include <fstream>
 
-__global__ static void f_wavConvert(float2* output, char* input, size_t frames, size_t numChannels, size_t bitsPerSample)
+__global__ static void f_wavConvert(float2* output, short2* input, size_t frames)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
-	for (int s = 0; s < frames; s+=stride.x)
+	for (int s = offset.x; s < frames; s += stride.x)
 	{
-		float r[2] = {0,0};
-		for (int c = 0; c < numChannels; c++)
-		{
-			auto bps = bitsPerSample >> 3;
-			auto idx = (s/2 + c) * bps * numChannels;
-			uint32_t v = 0;
-			for (int i=0; i<bps; i++)
-			{
-				v += ((uint32_t)input[idx + i]) << (i << 3);
-			}
-			r[c] = v;
-		}
-		output[s] = { r[0], r[1] };
+		short2 v = input[s];
+		output[s] = make_float2(
+			v.x / (float)65536,
+			v.y / (float)65536);
 	}
 }
 
@@ -43,20 +34,28 @@ WavFile::WavFile(const std::string& path)
 	};
 
 	std::ifstream is = std::ifstream(path, std::ifstream::binary);
-	is >> header.chunkId >> header.chunkSize;
-	assert(header.chunkSize == 4);
+	is.read((char*)&header, 8);
 
-	char* format = (char*) alloca(header.chunkSize);
-	is.read(format, header.chunkSize);
+	char* format = (char*) alloca(4);
+	is.read(format, 4);
 	assert(!memcmp(format, "WAVE", 4));
 
-	is >> header.chunkId >> header.chunkSize;
+	is.read((char*)&header, 8);
 	assert(header.chunkSize >= sizeof(fmt_t));
 	fmt_t* fmt = (fmt_t*) alloca(header.chunkSize);
 	is.read((char*)fmt, header.chunkSize);
 
-	is >> header.chunkId >> header.chunkSize;
+	Log::info("WAV", "Format: %d", fmt->audioFormat);
+	Log::newline("Num Channels: %d", fmt->numChannels);
+	Log::newline("Sample Rate: %d", fmt->sampleRate);
+	Log::newline("Byte Rate: %d", fmt->byteRate);
+	Log::newline("Block Align: %d", fmt->blockAlign);
+	Log::newline("Bits per Sample: %d", fmt->bitsPerSample);
 
+	is.read((char*)&header, 8);
+	Log::info("WAV", "reading %d frames of audio (%0.2f s)", 
+			header.chunkSize / fmt->blockAlign, 
+			header.chunkSize / (float)fmt->byteRate);
 	char* hostBuffer = new char[header.chunkSize];
 	is.read(hostBuffer, header.chunkSize);
 
@@ -64,18 +63,22 @@ WavFile::WavFile(const std::string& path)
 	int rc = cudaMalloc(&devBuffer, header.chunkSize);
 	assert(cudaSuccess == rc);
 
-	size_t frames = header.chunkSize / (fmt->numChannels * (fmt->bitsPerSample >> 3));
+	numFrames = header.chunkSize / (fmt->numChannels * (fmt->bitsPerSample >> 3));
 
-	rc = cudaMalloc(&buffer, frames * sizeof(float2));
+	rc = cudaMalloc(&buffer, numFrames * sizeof(float2));
 	assert(cudaSuccess == rc);
 
 	rc = cudaMemcpy(devBuffer, hostBuffer, header.chunkSize, cudaMemcpyHostToDevice);
 	assert(cudaSuccess == rc);
 
-	f_wavConvert <<< 16, 256, 0, 0 >>> ( buffer, devBuffer, frames, fmt->numChannels, fmt->bitsPerSample);
+	assert(2 == fmt->numChannels);
+	assert(4 == fmt->blockAlign);
+	assert(16 == fmt->bitsPerSample);
+	f_wavConvert <<< 16, 256, 0, 0 >>> ( buffer, (short2*)devBuffer, numFrames);
 
 	delete[] hostBuffer;
 	
 	cudaStreamSynchronize(0);
 
+	Log::info("WAV", "Ready. %d frames", numFrames);
 }
