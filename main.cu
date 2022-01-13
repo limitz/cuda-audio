@@ -16,12 +16,12 @@ __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t s
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
 		float a1 = (t + s) % sr;
-		float b1 = v * fmaf(powf((sr-a1)/sr,10), fmodf(a1/40,2), -1);
+		float b1 = v * fmaf(powf((sr-a1)/sr,20), fmodf(a1/80,2), -1);
 		output[s] = {b1,0};
 	}
 }
 
-__global__ static void f_makeImpulseResponse(cufftComplex* output, size_t samples, size_t sr, size_t t, size_t dt,float v)
+__global__ static void f_makeImpulseResponse(cufftComplex* output, size_t samples, size_t sr, size_t t, size_t dt, size_t lp,float v)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
@@ -31,7 +31,7 @@ __global__ static void f_makeImpulseResponse(cufftComplex* output, size_t sample
 
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
-		output[s] ={((s + dt) % t) == 0 ? 1.0f / (1+s/t) : 0.0f, 0.0f};
+		output[s] = {((s + dt) % t) < lp ? 1.0f / (lp+lp*s/t) : 0.0f, 0.0f};
 	}
 }
 
@@ -132,6 +132,8 @@ protected:
 	virtual void midiDeviceHandlerOnReceive(MidiDevice* sender, const uint8_t* buffer, size_t len) override
 	{
 		if (buffer[0] == 0xB0 && buffer[1] == 0x15) _delay = 200 + 16000 * buffer[2] / 0x80;
+		if (buffer[0] == 0xB0 && buffer[1] == 0x16) _lp = 1 + buffer[2];
+		if (buffer[0] == 0xB0 && buffer[1] == 0x17) _vol = buffer[2];
 	}
 
 	virtual void audioDeviceHandlerOnOutputBuffer(AudioDevice* sender, float* buffer, size_t frames) override
@@ -147,9 +149,9 @@ protected:
 		auto sr = sender->sampleRate;
 		cudaEventRecord(started, _streams[0]);
 		cudaMemset(_a, 0, _fftSize * sizeof(cufftComplex));
-		f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, 0.15f);
-		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b1, _fftSize, sr, _delay, 0, 1.0f);
-		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b2, _fftSize, sr, _delay, _delay/2, 1.0f);
+		f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, _vol / 256.0f);
+		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b1, _fftSize, sr, _delay, 0, _lp, 1.0f);
+		f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b2, _fftSize, sr, _delay, _delay/2, _lp, 1.0f);
 		cufftSetStream(_plan, _streams[0]);
 
 		rc = cufftExecC2C(_plan, _a, _afft, CUFFT_FORWARD);
@@ -190,7 +192,9 @@ protected:
 	}
 
 private:
-	size_t _delay = 8000;
+	size_t _delay = 16000;
+	size_t _lp = 16;
+	size_t _vol = 0x40;
 
 	cufftHandle _plan;
 	cufftComplex *_a, *_afft;
