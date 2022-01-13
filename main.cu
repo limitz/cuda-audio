@@ -21,7 +21,7 @@ __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t s
 	}
 }
 
-__global__ static void f_makeImpulseResponse(cufftComplex* output, size_t samples, size_t sr, size_t t, float v)
+__global__ static void f_makeImpulseResponse(cufftComplex* output, size_t samples, size_t sr, size_t t, size_t dt,float v)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
@@ -31,20 +31,21 @@ __global__ static void f_makeImpulseResponse(cufftComplex* output, size_t sample
 
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
-		output[s] ={(s % t) == 0 ? 1.0f / (1+s/t) : 0,  ((s + t/2) % t) == 0 ? 1.0f / (1+s/t) : 0.0f};
+		output[s] ={((s + dt) % t) == 0 ? 1.0f / (1+s/t) : 0.0f, 0.0f};
 	}
 }
 
-__global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* a, const cufftComplex* b, size_t size)
+__global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* s1, const cufftComplex* s2, const cufftComplex* b, size_t size)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
 	for (auto s = offset.x; s < size; s += stride.x)
 	{
-		auto va = a[s];
-		auto vb = b[s];
-		r[s] = {va.x + vb.x, va.y + vb.y};
+		auto vs1 = s1[s];
+		auto vs2 = s2[s];
+		auto res = b[s];
+		r[s] = {vs1.x + res.x, vs2.x + res.y};
 	}
 }
 
@@ -69,8 +70,9 @@ public:
 	MainHandler() :
 		_fftSize(0),
 		_a(nullptr), _afft(nullptr),
-		_b(nullptr), _bfft(nullptr),
-		_r(nullptr), _rfft(nullptr)
+		_b1(nullptr), _b1fft(nullptr),
+		_b2(nullptr), _b2fft(nullptr),
+		_r1(nullptr), _r2(nullptr), _rfft(nullptr)
 	{
 		int rc;
 		for (auto i = 0; i<4; i++) 
@@ -90,14 +92,20 @@ public:
 		auto fftSize = size * sizeof(cufftComplex) * 2;
 		rc = cudaMalloc(&_a, fftSize);
 		assert(0 == rc);
-		rc = cudaMalloc(&_b, fftSize);
+		rc = cudaMalloc(&_b1, fftSize);
 		assert(0 == rc);
-		rc = cudaMalloc(&_r, fftSize);
+		rc = cudaMalloc(&_b2, fftSize);
+		assert(0 == rc);
+		rc = cudaMalloc(&_r1, fftSize);
+		assert(0 == rc);
+		rc = cudaMalloc(&_r2, fftSize);
 		assert(0 == rc);
 
 		rc = cudaMalloc(&_afft, fftSize);
 		assert(0 == rc);
-		rc = cudaMalloc(&_bfft, fftSize);
+		rc = cudaMalloc(&_b1fft, fftSize);
+		assert(0 == rc);
+		rc = cudaMalloc(&_b2fft, fftSize);
 		assert(0 == rc);
 		rc = cudaMalloc(&_rfft, fftSize);
 		assert(0 == rc);
@@ -134,26 +142,32 @@ protected:
 		auto sr = sender->sampleRate;
 		cudaMemset(_a, 0, _fftSize * sizeof(cufftComplex));
 		f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, 0.15f);
-		f_makeImpulseResponse <<< 16, 256, 0, _streams[1] >>> (_b, _fftSize, sr, _delay, 1.0f);
-		cudaStreamSynchronize(_streams[0]);
-		cudaStreamSynchronize(_streams[1]);
+		f_makeImpulseResponse <<< 64, 256, 0, _streams[1] >>> (_b1, _fftSize, sr, _delay, 0, 1.0f);
+		f_makeImpulseResponse <<< 64, 256, 0, _streams[2] >>> (_b2, _fftSize, sr, _delay, _delay/2, 1.0f);
 		cufftSetStream(_plan, _streams[0]);
 
 		rc = cufftExecC2C(_plan, _a, _afft, CUFFT_FORWARD);
 		assert(cudaSuccess == rc);
-		rc = cufftExecC2C(_plan, _b, _bfft, CUFFT_FORWARD);
+		
+		cudaStreamSynchronize(_streams[1]);
+		rc = cufftExecC2C(_plan, _b1, _b1fft, CUFFT_FORWARD);
 		assert(cudaSuccess == rc);
-		
-		f_pointwiseMultiply <<< 8, 256, 0, _streams[0] >>> (_rfft, _afft, _bfft, _fftSize);
-		
-		rc = cufftExecC2C(_plan, _rfft, _r, CUFFT_INVERSE);
+		f_pointwiseMultiply <<< 64, 256, 0, _streams[0] >>> (_rfft, _afft, _b1fft, _fftSize);
+		rc = cufftExecC2C(_plan, _rfft, _r1, CUFFT_INVERSE);
 		assert(cudaSuccess == rc);
 
-		f_pointwiseAdd <<< 4, 256, 0, _streams[0] >>> (_r, _r, _residual, _fftSize/2-frames);
-
-		rc = cudaMemcpyAsync(_residual, _r+frames, (_fftSize - frames) * sizeof(cufftComplex), cudaMemcpyDeviceToDevice, _streams[0]);
+		cudaStreamSynchronize(_streams[2]);
+		rc = cufftExecC2C(_plan, _b2, _b2fft, CUFFT_FORWARD);
 		assert(cudaSuccess == rc);
-		rc = cudaMemcpyAsync(buffer, _r, frames*sizeof(cufftComplex), cudaMemcpyDeviceToHost, _streams[0]);
+		f_pointwiseMultiply <<< 64, 256, 0, _streams[0] >>> (_rfft, _afft, _b2fft, _fftSize);
+		rc = cufftExecC2C(_plan, _rfft, _r2, CUFFT_INVERSE);
+		assert(cudaSuccess == rc);
+		
+		f_pointwiseAdd <<< 4, 256, 0, _streams[0] >>> (_a, _r1, _r2, _residual, _fftSize - frames);
+		rc = cudaMemcpyAsync(_residual, _a+frames, (_fftSize - frames) * sizeof(cufftComplex), 
+				cudaMemcpyDeviceToDevice, _streams[0]);
+		assert(cudaSuccess == rc);
+		rc = cudaMemcpyAsync(buffer, _a, frames*sizeof(cufftComplex), cudaMemcpyDeviceToHost, _streams[0]);
 		assert(cudaSuccess == rc);
 
 		rc = cudaStreamSynchronize(_streams[0]);
@@ -166,8 +180,9 @@ private:
 
 	cufftHandle _plan;
 	cufftComplex *_a, *_afft;
-	cufftComplex *_b, *_bfft;
-	cufftComplex *_r, *_rfft;
+	cufftComplex *_b1, *_b1fft;
+	cufftComplex *_b2, *_b2fft;
+	cufftComplex *_r1, *_r2, *_rfft;
 	cufftComplex *_residual;
 
 	cudaStream_t _streams[4];
