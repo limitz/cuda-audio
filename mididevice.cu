@@ -7,12 +7,13 @@ static bool isValidMessage(const uint8_t* buffer, size_t len)
 	{
 	case 0x80:
 	case 0x90:
+	case 0xA0:
 	case 0xB0:
-		return (3 == len);
+		return (3 <= len);
 	case 0xF0:
 		return (0xF7 == buffer[len-1]);
 	default:
-		return false;
+		return true;
 	}
 }
 
@@ -24,7 +25,7 @@ void* MidiDevice::proc(void* context)
 	self->_isRunning = true;
 
 	int rc;
-	uint8_t buffer[256];
+	uint8_t buffer[512];
 	size_t len = 0;
 
 	while (self->_isRunning)

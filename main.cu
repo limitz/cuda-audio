@@ -188,7 +188,7 @@ protected:
 		rc = cudaEventElapsedTime(&elapsed, started, stopped);
 		assert(cudaSuccess == rc);
 
-		std::cout << elapsed << std::endl;
+		//std::cout << elapsed << std::endl;
 	}
 
 private:
@@ -218,7 +218,7 @@ int main()
 	AudioDevice sound("default", &handler);
 	sound.start();
 
-	MidiDevice midi("hw:2,0,0", &handler);
+	MidiDevice midi("hw:2,0,0");
 	midi.start();
 
 	std::cin.get();
