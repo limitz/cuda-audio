@@ -10,7 +10,7 @@ public:
 	{	
 	protected:
 		friend class MidiDevice;
-		virtual void midiDeviceHandlerOnReceive(MidiDevice*, const uint8_t* message, size_t len) = 0;
+		virtual void midiDeviceOnReceive(MidiDevice*, const uint8_t* message, size_t len) = 0;
 	};
 
 	const std::string deviceId;

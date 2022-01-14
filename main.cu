@@ -8,6 +8,17 @@
 
 static WavFile* wav[8];
 
+__global__ static void f_copyInput(cufftComplex* output, float2* buffer, size_t samples)
+{
+	auto stride = gridDim * blockDim;
+	auto offset = blockDim * blockIdx + threadIdx;
+
+	for (auto s = offset.x; s < samples; s += stride.x)
+	{
+		output[s] = {buffer[s].x * 0.2f,0};
+	}
+}
+
 __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t sr, size_t t, float v)
 {
 	auto stride = gridDim * blockDim;
@@ -139,7 +150,7 @@ public:
 	}	
 
 protected:
-	virtual void midiDeviceHandlerOnReceive(MidiDevice* sender, const uint8_t* buffer, size_t len) override
+	virtual void midiDeviceOnReceive(MidiDevice* sender, const uint8_t* buffer, size_t len) override
 	{
 		if (buffer[0] == 0xB0 && buffer[1] == 0x15) _delay = 200 + 16000 * buffer[2] / 0x80;
 		if (buffer[0] == 0xB0 && buffer[1] == 0x16) _lp = 1 + buffer[2];
@@ -148,7 +159,16 @@ protected:
 		if (buffer[0] == 0x90 && buffer[1] == 0x09) _widx = (_widx+1) % 8;
 	}
 
-	virtual void audioDeviceHandlerOnOutputBuffer(AudioDevice* sender, float* buffer, size_t frames) override
+	virtual void audioDeviceOnInputBuffer(AudioDevice* sender, float* buffer, size_t frames) override
+	{
+		int rc;
+		auto nc = sender->numChannels;
+		assert(2 == nc);
+		cudaMemsetAsync(_a, 0, _fftSize * sizeof(cufftComplex), _streams[0]);
+		f_copyInput <<< 2, 256, 0, _streams[0] >>> (_a, (float2*)buffer, frames);
+	}
+
+	virtual void audioDeviceOnOutputBuffer(AudioDevice* sender, float* buffer, size_t frames) override
 	{
 		int rc;
 		
@@ -160,8 +180,7 @@ protected:
 		auto nc = sender->numChannels;
 		auto sr = sender->sampleRate;
 		cudaEventRecord(started, _streams[0]);
-		cudaMemset(_a, 0, _fftSize * sizeof(cufftComplex));
-		f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, _vol / 256.0f);
+		//f_makeTone <<< 2, 256, 0, _streams[0] >>> (_a, frames, sr, t, _vol / 256.0f);
 		f_deinterleaveIR <<< 32, 256, 0, _streams[0] >>> (_b1, _b2, wav[_widx]->buffer, min(wav[_widx]->numFrames, _fftSize - frames));
 
 		//f_makeImpulseResponse <<< 32, 256, 0, _streams[0] >>> (_b1, _fftSize-frames, sr, _delay, 0, _lp, 1.0f);
@@ -208,7 +227,7 @@ protected:
 private:
 	size_t _delay = 1600;
 	size_t _lp = 8;
-	size_t _vol = 0x10;
+	size_t _vol = 0x01;
 	size_t _widx = 0;
 	cufftHandle _plan;
 	cufftComplex *_a, *_afft;
@@ -239,15 +258,20 @@ int main()
 	handler.prepare(128000, 2);
 
 	AudioDevice sound("default", &handler);
+	sound.mode = AudioDevice::Mode::output;
 	sound.start();
+
+	AudioDevice record("default", &handler);
+	record.mode = AudioDevice::Mode::input;
+	record.start();
 
 	MidiDevice midi("hw:2,0,0", &handler);
 	midi.start();
 
-
 	std::cin.get();
 
 	midi.stop();
+	record.stop();
 	sound.stop();
 	
 	for (int i=0; i< 8; i++) delete wav[i];

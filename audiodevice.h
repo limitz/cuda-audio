@@ -5,11 +5,18 @@
 class AudioDevice
 {
 public:
+	enum class Mode
+	{
+		output,
+		input
+	} mode;
+
 	class Handler
 	{
 	protected:
 		friend class AudioDevice;
-		virtual void audioDeviceHandlerOnOutputBuffer(AudioDevice*, float* buffer, size_t frames) = 0;
+		virtual void audioDeviceOnOutputBuffer(AudioDevice*, float* buffer, size_t frames) {};
+		virtual void audioDeviceOnInputBuffer(AudioDevice*, float* buffer, size_t frames) {};
 	};
 
 	const std::string deviceId;
@@ -17,8 +24,8 @@ public:
 
 	const int numChannels = 2;
 	const int sampleRate = 48000;
-	snd_pcm_uframes_t periodSize = 1024*2;
-	snd_pcm_uframes_t bufferSize = 2048*4;
+	snd_pcm_uframes_t periodSize = 2048;
+	snd_pcm_uframes_t bufferSize = 4096;
 
 	AudioDevice(const std::string& deviceId, Handler* handler = nullptr) : 
 		deviceId(deviceId),
@@ -45,5 +52,6 @@ private:
 	pthread_t _thread;
 
 	float *_buffer;
-	static void* proc(void*);
+	static void* proc_output(void*);
+	static void* proc_input(void*);
 };

@@ -37,7 +37,7 @@ void* MidiDevice::proc(void* context)
 			auto h = self->handler;
 			if (h)
 			{
-				h->midiDeviceHandlerOnReceive(self, buffer, len);
+				h->midiDeviceOnReceive(self, buffer, len);
 			}
 			//else
 			{

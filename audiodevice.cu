@@ -48,7 +48,56 @@ static int waitForPoll(snd_pcm_t* pcm, struct pollfd *fd, unsigned int count)
 	}
 }
 
-void* AudioDevice::proc(void* context)
+void* AudioDevice::proc_input(void* context)
+{
+	int rc;
+	AudioDevice* self = reinterpret_cast<AudioDevice*>(context);
+
+	self->_isRunning = true;
+
+	bool needsPoll = false;
+	while (self->_isRunning)
+	{
+		size_t requestFrames = self->bufferSize;
+		assert(self->_isOpen);
+
+		snd_pcm_uframes_t nread = 0;
+		while (nread < requestFrames)
+		{
+			rc = snd_pcm_readi(
+					self->_pcm,
+					self->_buffer + nread * self->numChannels,
+					requestFrames - nread);
+			if (rc == -EAGAIN) 
+			{
+				usleep(100);
+				continue;
+			}
+			if (!rc) usleep(100);
+			if (rc < 0)
+			{
+				rc = xrunRecovery(self->_pcm, rc);
+				assert(0 == rc);
+				nread = 0;
+				continue;
+			}
+			nread += rc;
+		}
+		auto h = self->handler;
+		if (h)
+		{
+			h->audioDeviceOnInputBuffer(self, self->_buffer, requestFrames);
+		}
+		else
+		{
+			std::cout << "Input buffer" << std::endl;
+		}
+	}
+	self->_isRunning = false;
+	return nullptr;
+}
+
+void* AudioDevice::proc_output(void* context)
 {
 	int rc;
 	AudioDevice* self = reinterpret_cast<AudioDevice*>(context);
@@ -68,7 +117,7 @@ void* AudioDevice::proc(void* context)
 	bool needsPoll = false;
 	while (self->_isRunning)
 	{
-		size_t requestFrames = self->periodSize*2;
+		size_t requestFrames = self->bufferSize;
 
 		assert(self->_isOpen);
 		if (needsPoll)
@@ -80,7 +129,7 @@ void* AudioDevice::proc(void* context)
 		auto h = self->handler;
 		if (h)
 		{
-			h->audioDeviceHandlerOnOutputBuffer(self, self->_buffer, requestFrames);
+			h->audioDeviceOnOutputBuffer(self, self->_buffer, requestFrames);
 		}
 
 		snd_pcm_uframes_t written = 0;
@@ -89,7 +138,12 @@ void* AudioDevice::proc(void* context)
 			rc = snd_pcm_writei(
 					self->_pcm, 
 					self->_buffer + written * self->numChannels, 
-					min(self->periodSize, requestFrames - written));
+					requestFrames - written);
+			if (rc == -EAGAIN) 
+			{
+				usleep(100);
+				continue;
+			}
 			if (rc < 0)
 			{
 				rc = xrunRecovery(self->_pcm, rc);
@@ -113,11 +167,20 @@ void AudioDevice::start()
 	int rc;
 	assert(!_isOpen);
 
-	rc = snd_pcm_open(&_pcm, deviceId.c_str(), SND_PCM_STREAM_PLAYBACK, 0);
-	assert(0 == rc);
+	switch (mode)
+	{
+	case Mode::output:
+		rc = snd_pcm_open(&_pcm, deviceId.c_str(), SND_PCM_STREAM_PLAYBACK, 0);
+		assert(0 == rc);
+		break;
+	case Mode::input:
+		rc = snd_pcm_open(&_pcm, deviceId.c_str(), SND_PCM_STREAM_CAPTURE, 0);
+		assert(0 == rc);
+		break;
+	}
+		rc = snd_pcm_nonblock(_pcm, 1);
+		assert(0 == rc);
 
-	rc = snd_pcm_nonblock(_pcm, 1);
-	assert(0 == rc);
 
 	snd_pcm_hw_params_t* hw;
 	snd_pcm_hw_params_alloca(&hw);
@@ -153,6 +216,8 @@ void AudioDevice::start()
 	assert(0 == rc);
 	std::cout << periodSize << std::endl;
 
+	//bufferSize = 2 * periodSize;
+
 	rc = snd_pcm_hw_params(_pcm, hw);
 	assert(0 == rc);
 
@@ -185,8 +250,17 @@ void AudioDevice::start()
 
 	_isOpen = true;
 
-	rc = pthread_create(&_thread, NULL, AudioDevice::proc, this);
-	assert(0 == rc);
+	switch (mode)
+	{
+	case Mode::output:
+		rc = pthread_create(&_thread, NULL, AudioDevice::proc_output, this);
+		assert(0 == rc);
+		break;
+	case Mode::input:
+		rc = pthread_create(&_thread, NULL, AudioDevice::proc_input, this);
+		assert(0 == rc);
+		break;
+	}
 }
 
 void AudioDevice::stop()
