@@ -16,7 +16,7 @@ __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t s
 	for (auto s = offset.x; s < samples; s += stride.x)
 	{
 		float a1 = (t + s) % sr;
-		float b1 = v * fmaf(powf(0.1f + 0.9f*(sr-a1)/sr,5), fmodf(a1/(50+s),2), -1);
+		float b1 = v * fmaf(powf(0.1f+0.9f*(sr-a1)/sr,10), min(a1/200,1.0f) * sinpif(a1/sr * 190) + cospif(a1/sr * 256), 0);
 		output[s] = {b1,0};
 	}
 }
@@ -55,7 +55,7 @@ __global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* s1, c
 		auto vs1 = s1[s];
 		auto vs2 = s2[s];
 		auto res = b[s];
-		r[s] = {vs1.x + res.x, vs2.x + res.y};
+		r[s] = {clamp(vs1.x + res.x, -1.0f, 1.0f), clamp(vs2.x + res.y, -1.0f, 1.0f)};
 	}
 }
 
