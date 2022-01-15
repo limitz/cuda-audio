@@ -54,7 +54,7 @@ __global__ static void f_scale(cufftComplex* r, float scale, size_t n)
 
 	for (auto s = offset.x; s < n; s += stride.x)
 	{
-		r[s] *= scale;
+		r[s] = clamp(r[s] * scale, -1, 1);
 	}
 }
 __global__ static void f_pointwiseMultiply(cufftComplex* r, const cufftComplex* a, size_t n)
@@ -182,8 +182,8 @@ public:
 		assert(cudaSuccess == rc);
 		rc = cufftExecC2C(_plan, output.right, output.right, CUFFT_INVERSE);
 		assert(cudaSuccess == rc);
-		f_scale <<< 64, 256, 0, _streams[0] >>> (output.right, 1.0f/_fftSize, _fftSize);
-		f_scale <<< 64, 256, 0, _streams[0] >>> (output.left,  1.0f/_fftSize, _fftSize);
+		f_scale <<< 64, 256, 0, _streams[0] >>> (output.right, _vol * 1.0f/_fftSize, _fftSize);
+		f_scale <<< 64, 256, 0, _streams[0] >>> (output.left,  _vol * 1.0f/_fftSize, _fftSize);
 		
 		// Add the residual
 		f_pointwiseAdd <<< 64, 256, 0, _streams[0] >>> (output.left, residual.left, _fftSize - nframes);
@@ -229,20 +229,10 @@ public:
 	{
 	}
 
-protected:
-	virtual void midiDeviceOnReceive(MidiDevice* sender, const uint8_t* buffer, size_t len)
-	{
-		if (buffer[0] == 0xB0 && buffer[1] == 0x15) _delay = 200 + 16000 * buffer[2] / 0x80;
-		if (buffer[0] == 0xB0 && buffer[1] == 0x16) _lp = 1 + buffer[2];
-		if (buffer[0] == 0xB0 && buffer[1] == 0x17) _vol = buffer[2];
-		
-		if (buffer[0] == 0x90 && buffer[1] == 0x09) _widx = (_widx+1) % 8;
-	}
-
 private:
 	size_t _delay = 1600;
 	size_t _lp = 8;
-	size_t _vol = 0x01;
+	float _vol = 0.4f;
 	size_t _widx = 0;
 	size_t _fftSize;
 	cudaStream_t _streams[4];
