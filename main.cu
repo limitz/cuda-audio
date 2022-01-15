@@ -75,7 +75,7 @@ __global__ static void f_pointwiseMultiply(cufftComplex* r, const cufftComplex* 
 class Convolution : public JackClient
 {
 public:
-	Convolution(size_t fftSize = 96000) : JackClient("Convolution"),
+	Convolution(size_t fftSize = 96000) : JackClient("Conv"),
 		_fftSize(fftSize)
 	{
 		int rc;
@@ -114,6 +114,7 @@ public:
 		assert(0 == rc);
 
 		activate();
+		midiIn = addInput("input.midi", JACK_DEFAULT_MIDI_TYPE);
 		input = addInput("input.mono");
 		left = addOutput("output.left");
 		right = addOutput("output.right");
@@ -128,6 +129,7 @@ public:
 		cufftComplex* left, *right;
 	} irFFT, output, residual;
 
+	JackPort midiIn;
 	JackPort input;
 	JackPort left;
 	JackPort right;
@@ -138,6 +140,28 @@ public:
 		auto in = jack_port_get_buffer(input, nframes);
 		auto L = jack_port_get_buffer(left, nframes);
 		auto R = jack_port_get_buffer(right, nframes);
+
+
+		auto midi = jack_port_get_buffer(midiIn, nframes);
+		auto nevts = jack_midi_get_event_count(midi);
+		for (auto i=0;i<nevts; i++)
+		{
+			jack_midi_event_t evt;
+			rc = jack_midi_event_get(&evt, midi, i);
+			assert(0 == rc);
+		
+			for (auto c=0; c<evt.size; c++)
+			{
+				//std::cout << std::hex << (int)evt.buffer[c] << " ";
+			}
+			//std::cout << std::endl;
+			if ((evt.buffer[0] & 0xF0) == 0x90)
+			{
+				_widx = (_widx + 1) % 8;
+			}
+		}
+		
+
 
 		cudaEvent_t started, stopped;
 		cudaEventCreate(&started);
@@ -242,7 +266,7 @@ int main()
 {
 	selectGpu();
 
-	wav[0] = new WavFile("ir6.wav");
+	wav[0] = new WavFile("ir5.wav");
 	wav[1] = new WavFile("ir2.wav");
 	wav[2] = new WavFile("ir3.wav");
 	wav[3] = new WavFile("ir4.wav");

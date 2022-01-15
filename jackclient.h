@@ -1,5 +1,6 @@
 #include "gpu.h"
 #include <jack/jack.h>
+#include <jack/midiport.h>
 #include <map>
 
 typedef jack_port_t* JackPort;
