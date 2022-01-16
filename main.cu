@@ -2,8 +2,6 @@
 #include <iostream>
 
 #include "gpu.h"
-#include "audiodevice.h"
-#include "mididevice.h"
 #include "wav.h"
 #include "jackclient.h"
 
