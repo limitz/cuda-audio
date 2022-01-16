@@ -271,7 +271,7 @@ int main()
 {
 	selectGpu();
 
-	wav[0] = new WavFile("ir5.wav");
+	wav[0] = new WavFile("ir1.wav");
 	wav[1] = new WavFile("ir2.wav");
 	wav[2] = new WavFile("ir3.wav");
 	wav[3] = new WavFile("ir4.wav");
