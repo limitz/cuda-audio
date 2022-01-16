@@ -73,7 +73,7 @@ __global__ static void f_pointwiseMultiply(cufftComplex* r, const cufftComplex* 
 class Convolution : public JackClient
 {
 public:
-	Convolution(size_t fftSize = 96000) : JackClient("Conv"),
+	Convolution(size_t fftSize = 512 * 256) : JackClient("Conv"),
 		_fftSize(fftSize)
 	{
 		int rc;
@@ -90,7 +90,7 @@ public:
 			&output.left, &output.right,
 			&residual.left, &residual.right
 		};
-		for (auto i = 0; i < 8; i++)
+		for (auto i = 0; i < sizeof(cc) / sizeof(*cc); i++)
 		{
 			rc = cudaMalloc(cc[i], fftSize * sizeof(cufftComplex));
 			assert(cudaSuccess == rc);
@@ -196,20 +196,20 @@ public:
 		assert(cudaSuccess == rc);
 
 		// multiply ir with input
-		f_pointwiseMultiply <<< 64, 256, 0, _streams[0] >>> (output.left, cinFFT, _fftSize);
-		f_pointwiseMultiply <<< 64, 256, 0, _streams[0] >>> (output.right, cinFFT, _fftSize);
+		f_pointwiseMultiply <<< 256, 256, 0, _streams[0] >>> (output.left, cinFFT, _fftSize);
+		f_pointwiseMultiply <<< 256, 256, 0, _streams[0] >>> (output.right, cinFFT, _fftSize);
 
 		// take the inverse FFT of the output
 		rc = cufftExecC2C(_plan, output.left, output.left, CUFFT_INVERSE);
 		assert(cudaSuccess == rc);
 		rc = cufftExecC2C(_plan, output.right, output.right, CUFFT_INVERSE);
 		assert(cudaSuccess == rc);
-		f_scale <<< 64, 256, 0, _streams[0] >>> (output.right, _vol * 1.0f/_fftSize, _fftSize);
-		f_scale <<< 64, 256, 0, _streams[0] >>> (output.left,  _vol * 1.0f/_fftSize, _fftSize);
+		f_scale <<< 256, 256, 0, _streams[0] >>> (output.right, _vol * 1.0f/_fftSize, _fftSize);
+		f_scale <<< 256, 256, 0, _streams[0] >>> (output.left,  _vol * 1.0f/_fftSize, _fftSize);
 		
 		// Add the residual
-		f_pointwiseAdd <<< 64, 256, 0, _streams[0] >>> (output.left, residual.left, _fftSize - nframes);
-		f_pointwiseAdd <<< 64, 256, 0, _streams[0] >>> (output.right, residual.right, _fftSize - nframes);
+		f_pointwiseAdd <<< 256, 256, 0, _streams[0] >>> (output.left, residual.left, _fftSize - nframes);
+		f_pointwiseAdd <<< 256, 256, 0, _streams[0] >>> (output.right, residual.right, _fftSize - nframes);
 		
 		// Copy output to host
 		rc = cudaMemcpy2DAsync(L, sizeof(float), output.left, sizeof(cufftComplex),
@@ -243,6 +243,9 @@ public:
 		rc = cudaEventElapsedTime(&elapsed, started, stopped);
 		assert(cudaSuccess == rc);
 
+		_runtime += elapsed;
+		_nruns++;
+
 		//memcpy(L, in, nframes * sizeof(jack_default_audio_sample_t));
 		//memcpy(R, in, nframes * sizeof(jack_default_audio_sample_t));
 	}
@@ -251,7 +254,11 @@ public:
 	{
 	}
 
+	double avgRuntime() const { return _nruns ? _runtime / _nruns : 0; }
+
 private:
+	double _runtime = 0;
+	size_t _nruns = 0;
 	size_t _delay = 1600;
 	size_t _lp = 8;
 	float _vol = 0.4f;
@@ -279,6 +286,9 @@ int main()
 	jack_connect(c.handle, jack_port_name(c.left),  "system:playback_1");
 	jack_connect(c.handle, jack_port_name(c.right), "system:playback_2");
 	std::cin.get();
+
+	Log::info(__func__, "Average convolution runtime: %f", c.avgRuntime());
+
 
 	for (int i=0; i< 8; i++) delete wav[i];
 	return 0;
