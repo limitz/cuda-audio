@@ -5,7 +5,7 @@
 #include "wav.h"
 #include "jackclient.h"
 
-static WavFile* wav[8];
+static WavFile* wav[38];
 
 __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t sr, size_t t, float v)
 {
@@ -55,7 +55,7 @@ __global__ static void f_scale(cufftComplex* r, float scale, size_t n)
 		r[s] = clamp(r[s] * scale, -1, 1);
 	}
 }
-__global__ static void f_pointwiseMultiply(cufftComplex* r, const cufftComplex* a, size_t n)
+__global__ static void f_pointwiseMultiply(cufftComplex* r, const cufftComplex* ir, const cufftComplex* a, size_t n)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
@@ -63,7 +63,7 @@ __global__ static void f_pointwiseMultiply(cufftComplex* r, const cufftComplex* 
 	for (auto s = offset.x; s < n; s += stride.x)
 	{
 		auto va = a[s];
-		auto vb = r[s];
+		auto vb = ir[s];
 		auto re = va.x * vb.x - va.y * vb.y;
 		auto im = (va.x + va.y) * (vb.x + vb.y) - re;
 		r[s] = make_float2(re, im);
@@ -86,6 +86,7 @@ public:
 
 		cufftComplex** cc[] = {
 			&cin, &cinFFT, 
+			&ir.left, &ir.right,
 			&irFFT.left, &irFFT.right,
 			&output.left, &output.right,
 			&residual.left, &residual.right
@@ -125,7 +126,7 @@ public:
 	struct
 	{
 		cufftComplex* left, *right;
-	} irFFT, output, residual;
+	} ir, irFFT, output, residual;
 
 	JackPort midiIn;
 	JackPort input;
@@ -155,7 +156,8 @@ public:
 			//std::cout << std::endl;
 			if ((evt.buffer[0] & 0xF0) == 0x90)
 			{
-				_widx = (_widx + 1) % 8;
+				_widx = (_widx + 1) % 38;
+				_uploadIR = true;
 			}
 		}
 		
@@ -167,12 +169,14 @@ public:
 		cudaEventRecord(started, _streams[0]);
 		cufftSetStream(_plan, _streams[0]);
 	
-		// move impulse response to irFFT.left , irFFT.right
-		f_deinterleaveIR <<< 32, 256, 0, _streams[1] >>> (
-				irFFT.left, irFFT.right,
+		if (_uploadIR)
+		{
+			// move impulse response to irFFT.left , irFFT.right
+			f_deinterleaveIR <<< 32, 256, 0, _streams[1] >>> (
+				ir.left, ir.right,
 				wav[_widx]->buffer, 
 				min(wav[_widx]->numFrames, _fftSize - nframes));
-
+		}
 		// copy input to device
 		rc = cudaMemcpy2DAsync(
 				cin,  sizeof(cufftComplex), 
@@ -185,19 +189,22 @@ public:
 		rc = cufftExecC2C(_plan, cin, cinFFT, CUFFT_FORWARD);
 		assert(cudaSuccess == rc);
 
-		// await deinterleaveIR
-		rc = cudaStreamSynchronize(_streams[1]);
-		assert(cudaSuccess == rc);
+		if (_uploadIR)
+		{
+			// await deinterleaveIR
+			rc = cudaStreamSynchronize(_streams[1]);
+			assert(cudaSuccess == rc);
 		
-		// inplace transform irFFT.left and irFFT.right
-		rc = cufftExecC2C(_plan, irFFT.left, output.left, CUFFT_FORWARD);
-		assert(cudaSuccess == rc);
-		rc = cufftExecC2C(_plan, irFFT.right, output.right, CUFFT_FORWARD);
-		assert(cudaSuccess == rc);
+			// inplace transform irFFT.left and irFFT.right
+			rc = cufftExecC2C(_plan, ir.left, irFFT.left, CUFFT_FORWARD);
+			assert(cudaSuccess == rc);
+			rc = cufftExecC2C(_plan, ir.right, irFFT.right, CUFFT_FORWARD);
+			assert(cudaSuccess == rc);
+		}
 
 		// multiply ir with input
-		f_pointwiseMultiply <<< 256, 256, 0, _streams[0] >>> (output.left, cinFFT, _fftSize);
-		f_pointwiseMultiply <<< 256, 256, 0, _streams[0] >>> (output.right, cinFFT, _fftSize);
+		f_pointwiseMultiply <<< 256, 256, 0, _streams[0] >>> (output.left, irFFT.left, cinFFT, _fftSize);
+		f_pointwiseMultiply <<< 256, 256, 0, _streams[0] >>> (output.right, irFFT.right, cinFFT, _fftSize);
 
 		// take the inverse FFT of the output
 		rc = cufftExecC2C(_plan, output.left, output.left, CUFFT_INVERSE);
@@ -245,7 +252,7 @@ public:
 
 		_runtime += elapsed;
 		_nruns++;
-
+		_uploadIR = false;
 		//memcpy(L, in, nframes * sizeof(jack_default_audio_sample_t));
 		//memcpy(R, in, nframes * sizeof(jack_default_audio_sample_t));
 	}
@@ -263,6 +270,7 @@ private:
 	size_t _lp = 8;
 	float _vol = 0.4f;
 	size_t _widx = 0;
+	bool _uploadIR = true;
 	size_t _fftSize;
 	cudaStream_t _streams[4];
 };
@@ -271,20 +279,60 @@ int main()
 {
 	selectGpu();
 
-	wav[0] = new WavFile("ir1.wav");
-	wav[1] = new WavFile("ir2.wav");
-	wav[2] = new WavFile("ir3.wav");
-	wav[3] = new WavFile("ir4.wav");
-	wav[4] = new WavFile("ir5.wav");
-	wav[5] = new WavFile("ir6.wav");
-	wav[6] = new WavFile("ir7.wav");
-	wav[7] = new WavFile("ir8.wav");
+	wav[0] = new WavFile("ir/1/Block Inside.wav");
+	wav[1] = new WavFile("ir/1/Bottle Hall.wav");
+	wav[2] = new WavFile("ir/1/Cement Blocks 1.wav");
+	wav[3] = new WavFile("ir/1/Cement Blocks 2.wav");
+	wav[4] = new WavFile("ir/1/Chateau de Logne, Outside.wav");
+	wav[5] = new WavFile("ir/1/Conic Long Echo Hall.wav");
+	wav[6] = new WavFile("ir/1/Deep Space.wav");
+	wav[7] = new WavFile("ir/1/Derlon Sanctuary.wav");
+	wav[8] = new WavFile("ir/1/Direct Cabinet N1.wav");
+	wav[9] = new WavFile("ir/1/Direct Cabinet N2.wav");
+	wav[10] = new WavFile("ir/1/Direct Cabinet N3.wav");
+	wav[11] = new WavFile("ir/1/Direct Cabinet N4.wav");
+	wav[12] = new WavFile("ir/1/Five Columns.wav");
+	wav[13] = new WavFile("ir/1/Five Columns Long.wav");
+	wav[14] = new WavFile("ir/1/French 18th Century Salon.wav");
+	wav[15] = new WavFile("ir/1/Going Home.wav");
+	wav[16] = new WavFile("ir/1/Greek 7 Echo Hall.wav");
+	wav[17] = new WavFile("ir/1/Highly Damped Large Room.wav");
+	wav[18] = new WavFile("ir/1/In The Silo.wav");
+	wav[19] = new WavFile("ir/1/In The Silo Revised.wav");
+	wav[20] = new WavFile("ir/1/Large Bottle Hall.wav");
+	wav[21] = new WavFile("ir/1/Large Long Echo Hall.wav");
+	wav[22] = new WavFile("ir/1/Large Wide Echo Hall.wav");
+	wav[23] = new WavFile("ir/1/Masonic Lodge.wav");
+	wav[24] = new WavFile("ir/1/Musikvereinsaal.wav");
+	wav[25] = new WavFile("ir/1/Narrow Bumpy Space.wav");
+	wav[26] = new WavFile("ir/1/Nice Drum Room.wav");
+	wav[27] = new WavFile("ir/1/On a Star.wav");
+	wav[28] = new WavFile("ir/1/Parking Garage.wav");
+	wav[29] = new WavFile("ir/1/Rays.wav");
+	wav[30] = new WavFile("ir/1/Right Glass Triangle.wav");
+	wav[31] = new WavFile("ir/1/Ruby Room.wav");
+	wav[32] = new WavFile("ir/1/Scala Milan Opera Hall.wav");
+	wav[33] = new WavFile("ir/1/Small Drum Room.wav");
+	wav[34] = new WavFile("ir/1/Small Prehistoric Cave.wav");
+	wav[35] = new WavFile("ir/1/St Nicolaes Church.wav");
+	wav[36] = new WavFile("ir/1/Trig Room.wav");
+	wav[37] = new WavFile("ir/1/Vocal Duo.wav");
 
 	Convolution c;
 
 	jack_connect(c.handle, "system:capture_1", jack_port_name(c.input));
 	jack_connect(c.handle, jack_port_name(c.left),  "system:playback_1");
 	jack_connect(c.handle, jack_port_name(c.right), "system:playback_2");
+
+	/*
+	auto midiports = jack_get_ports(c.handle, NULL, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput);
+	while (*midiports)
+	{
+		jack_connect(c.handle, *midiports, jack_port_name(c.midiIn));
+		midiports++;
+	}
+	jack_free(midiports);
+	*/
 	std::cin.get();
 
 	Log::info(__func__, "Average convolution runtime: %f", c.avgRuntime());
