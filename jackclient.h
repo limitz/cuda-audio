@@ -44,7 +44,7 @@ protected:
 		Log::info(name, "Activated.");
 	}
 	virtual void onProcess(size_t nframes) = 0;
-	virtual void onShutdown() = 0;
+	virtual void onShutdown() {};
 
 private:
 	static int processCallback(jack_nframes_t, void* arg);

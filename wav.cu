@@ -15,7 +15,7 @@ __global__ static void f_wavConvert(float2* output, short2* input, size_t frames
 	}
 }
 
-WavFile::WavFile(const std::string& path)
+WavFile::WavFile(const std::string& path) : path(path)
 {
 	struct hdr_t
 	{

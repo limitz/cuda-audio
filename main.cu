@@ -1,6 +1,7 @@
 #include <cufft.h>
 #include <iostream>
-
+#include <sstream>
+#include <vector>
 #include "gpu.h"
 #include "wav.h"
 #include "jackclient.h"
@@ -20,16 +21,18 @@ __global__ static void f_makeTone(cufftComplex* output, size_t samples, size_t s
 	}
 }
 
-__global__ static void f_deinterleaveIR(cufftComplex* L, cufftComplex* R, float2* ir, size_t n)
+__global__ static void f_deinterleaveIR(cufftComplex* L, cufftComplex* R, float2* ir, size_t maxFrames, size_t irFrames, float dry, float wet, size_t predelay)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
-	for (auto s = offset.x; s < n; s += stride.x)
+	for (int s = offset.x; s < maxFrames; s += stride.x)
 	{
-		auto v = ir[s];
-		L[s] = {v.x, 0};
-		R[s] = {v.y, 0};
+		auto d = s ? 0 : dry;
+		auto i = max(s - (int)predelay, 0);
+		auto v = i < irFrames ? ir[i] * wet + make_float2(d,d) : make_float2(0,0);
+		L[s] = {__saturatef(fabs(v.x)), 0};
+		R[s] = {__saturatef(fabs(v.y)), 0};
 	}
 }
 
@@ -73,7 +76,7 @@ __global__ static void f_pointwiseMultiply(cufftComplex* r, const cufftComplex* 
 class Convolution : public JackClient
 {
 public:
-	Convolution(size_t fftSize = 512 * 256) : JackClient("Conv"),
+	Convolution(const std::string& name = "Conv", size_t fftSize = 512 * 256) : JackClient(name),
 		_fftSize(fftSize)
 	{
 		int rc;
@@ -91,6 +94,7 @@ public:
 			&output.left, &output.right,
 			&residual.left, &residual.right
 		};
+
 		for (auto i = 0; i < sizeof(cc) / sizeof(*cc); i++)
 		{
 			rc = cudaMalloc(cc[i], fftSize * sizeof(cufftComplex));
@@ -114,9 +118,9 @@ public:
 
 		activate();
 		midiIn = addInput("input.midi", JACK_DEFAULT_MIDI_TYPE);
-		input = addInput("input.mono");
 		left = addOutput("output.left");
 		right = addOutput("output.right");
+		input = addInput("input.mono");
 	}
 
 	cufftHandle _plan;
@@ -136,10 +140,10 @@ public:
 	void onProcess(size_t nframes)
 	{
 		int rc;
+		
 		auto in = jack_port_get_buffer(input, nframes);
 		auto L = jack_port_get_buffer(left, nframes);
 		auto R = jack_port_get_buffer(right, nframes);
-
 
 		auto midi = jack_port_get_buffer(midiIn, nframes);
 		auto nevts = jack_midi_get_event_count(midi);
@@ -149,34 +153,48 @@ public:
 			rc = jack_midi_event_get(&evt, midi, i);
 			assert(0 == rc);
 		
-			for (auto c=0; c<evt.size; c++)
+#if 0
+			for (auto c=0; c<evt.size; c++) std::cout << std::hex << (int)evt.buffer[c] << " ";
+			std::cout << std::endl;
+#endif
+
+			if ((evt.buffer[0] & 0xF0) == 0xB0)
 			{
-				//std::cout << std::hex << (int)evt.buffer[c] << " ";
-			}
-			//std::cout << std::endl;
-			if ((evt.buffer[0] & 0xF0) == 0x90)
-			{
-				_widx = (_widx + 1) % 38;
-				_uploadIR = true;
+				switch (evt.buffer[1])
+				{
+				case 0x15:
+					_widx = evt.buffer[2] >> 2;
+					std::cout << wav[_widx]->path.c_str() << std::endl;
+					break;
+				case 0x16:
+					_predelay = evt.buffer[2] << 6;
+					break;
+				case 0x17:
+					_dry = evt.buffer[2] / 127.0f;
+					break;
+				case 0x18:
+					_wet = evt.buffer[2] / 127.0f;
+					break;
+				}
 			}
 		}
 		
-
-
 		cudaEvent_t started, stopped;
 		cudaEventCreate(&started);
 		cudaEventCreate(&stopped);
 		cudaEventRecord(started, _streams[0]);
 		cufftSetStream(_plan, _streams[0]);
+		
+		//wav[_widx]->buffer[0] = {0,0};
 	
-		if (_uploadIR)
-		{
-			// move impulse response to irFFT.left , irFFT.right
-			f_deinterleaveIR <<< 32, 256, 0, _streams[1] >>> (
+		// move impulse response to irFFT.left , irFFT.right
+		f_deinterleaveIR <<< 32, 256, 0, _streams[1] >>> (
 				ir.left, ir.right,
 				wav[_widx]->buffer, 
-				min(wav[_widx]->numFrames, _fftSize - nframes));
-		}
+				_fftSize - nframes,
+				wav[_widx]->numFrames, 
+				_dry, _wet, _predelay);
+			
 		// copy input to device
 		rc = cudaMemcpy2DAsync(
 				cin,  sizeof(cufftComplex), 
@@ -188,20 +206,17 @@ public:
 		// get FFT of input
 		rc = cufftExecC2C(_plan, cin, cinFFT, CUFFT_FORWARD);
 		assert(cudaSuccess == rc);
-
-		if (_uploadIR)
-		{
-			// await deinterleaveIR
-			rc = cudaStreamSynchronize(_streams[1]);
-			assert(cudaSuccess == rc);
 		
-			// inplace transform irFFT.left and irFFT.right
-			rc = cufftExecC2C(_plan, ir.left, irFFT.left, CUFFT_FORWARD);
-			assert(cudaSuccess == rc);
-			rc = cufftExecC2C(_plan, ir.right, irFFT.right, CUFFT_FORWARD);
-			assert(cudaSuccess == rc);
-		}
-
+		// await deinterleaveIR
+		rc = cudaStreamSynchronize(_streams[1]);
+		assert(cudaSuccess == rc);
+		
+		// inplace transform irFFT.left and irFFT.right
+		rc = cufftExecC2C(_plan, ir.left, irFFT.left, CUFFT_FORWARD);
+		assert(cudaSuccess == rc);
+		rc = cufftExecC2C(_plan, ir.right, irFFT.right, CUFFT_FORWARD);
+		assert(cudaSuccess == rc);
+		
 		// multiply ir with input
 		f_pointwiseMultiply <<< 256, 256, 0, _streams[0] >>> (output.left, irFFT.left, cinFFT, _fftSize);
 		f_pointwiseMultiply <<< 256, 256, 0, _streams[0] >>> (output.right, irFFT.right, cinFFT, _fftSize);
@@ -252,25 +267,23 @@ public:
 
 		_runtime += elapsed;
 		_nruns++;
-		_uploadIR = false;
 		//memcpy(L, in, nframes * sizeof(jack_default_audio_sample_t));
 		//memcpy(R, in, nframes * sizeof(jack_default_audio_sample_t));
-	}
-
-	void onShutdown()
-	{
 	}
 
 	double avgRuntime() const { return _nruns ? _runtime / _nruns : 0; }
 
 private:
+	size_t _widx = 0; // index of IR wav file
+	size_t _predelay = 0;
+	float _wet = 1.0;
+	float _dry = 0.0;
+
 	double _runtime = 0;
 	size_t _nruns = 0;
 	size_t _delay = 1600;
 	size_t _lp = 8;
 	float _vol = 0.4f;
-	size_t _widx = 0;
-	bool _uploadIR = true;
 	size_t _fftSize;
 	cudaStream_t _streams[4];
 };
@@ -324,15 +337,15 @@ int main()
 	jack_connect(c.handle, jack_port_name(c.left),  "system:playback_1");
 	jack_connect(c.handle, jack_port_name(c.right), "system:playback_2");
 
-	/*
+#if 1
 	auto midiports = jack_get_ports(c.handle, NULL, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput);
 	while (*midiports)
 	{
+		Log::info(__func__, "Found MIDI port: %s", *midiports);
 		jack_connect(c.handle, *midiports, jack_port_name(c.midiIn));
 		midiports++;
 	}
-	jack_free(midiports);
-	*/
+#endif
 	std::cin.get();
 
 	Log::info(__func__, "Average convolution runtime: %f", c.avgRuntime());
