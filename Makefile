@@ -7,10 +7,24 @@ ifeq ($(PROC), x86_64)
 CFLAGS := -std=c++17 -O3 -fPIC -Wall
 IFLAGS := -I/usr/local/cuda/include
 LFLAGS := -rpath='$$ORIGIN'
-LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lasound -lcufft -ljack
-SMS := 61 86
+LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack
+SMS := 53 61 86
 HIGHEST_SM = $(lastword $(sort $(SMS)))
 NVCCFLAGS := -m64 -rdc=true -std=c++17 
+NVCCFLAGS += $(foreach flag,$(CFLAGS),$(addprefix -Xcompiler ,$(flag))) $(IFLAGS)
+NVLDFLAGS := -m64 
+NVLDFLAGS += $(foreach flag,$(LFLAGS),$(addprefix -Xlinker ,$(flag)))
+GENCODE := 
+$(foreach sm,$(SMS), $(eval GENCODE += -gencode arch=compute_$(sm),code=sm_$(sm)))
+GENCODE += -gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM)
+else
+CFLAGS := -O3 -fPIC -Wall
+IFLAGS := -I/usr/local/cuda/include
+LFLAGS := -rpath='$$ORIGIN'
+LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack
+SMS := 53 72 
+HIGHEST_SM = $(lastword $(sort $(SMS)))
+NVCCFLAGS := -m64 -rdc=true 
 NVCCFLAGS += $(foreach flag,$(CFLAGS),$(addprefix -Xcompiler ,$(flag))) $(IFLAGS)
 NVLDFLAGS := -m64 
 NVLDFLAGS += $(foreach flag,$(LFLAGS),$(addprefix -Xlinker ,$(flag)))
