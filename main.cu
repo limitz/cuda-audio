@@ -7,6 +7,7 @@
 #include "jackclient.h"
 #include "conv.h"
 
+
 // TODO: remove after refactoring, extern decl in conv.cu
 WavFile* wav[38];
 
@@ -54,6 +55,7 @@ int main()
 	wav[37] = new WavFile("ir/1/Vocal Duo.wav");
 
 	Convolution c;
+	c.start();
 
 	jack_connect(c.handle, "system:capture_1", jack_port_name(c.input));
 	jack_connect(c.handle, jack_port_name(c.left),  "system:playback_1");
@@ -70,9 +72,8 @@ int main()
 	//free(midiports);
 #endif
 	std::cin.get();
-
+	c.stop();
 	Log::info(__func__, "Average convolution runtime: %f", c.avgRuntime());
-
 
 	for (auto i=0UL; i<sizeof(wav)/sizeof(*wav); i++) delete wav[i];
 	return 0;

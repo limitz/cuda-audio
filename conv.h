@@ -1,5 +1,4 @@
 #pragma once
-
 #include <cufft.h>
 #include "gpu.h"
 #include "wav.h"
@@ -28,6 +27,7 @@ public:
 	JackPort right;
 
 	virtual void onProcess(size_t nframes) override;
+	virtual void onStart() override;
 	inline double avgRuntime() const { return _nruns ? _runtime / _nruns : 0; }
 
 	void loadIR(size_t idx, const WavFile& wav);

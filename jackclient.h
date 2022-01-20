@@ -19,6 +19,11 @@ public:
 	JackClient(const std::string& name);
 	virtual ~JackClient();
 
+	void start();
+	void stop();
+	
+	inline bool isRunning() const { return _isRunning; }
+
 protected:
 	JackPort addInput(const std::string& name, const std::string& type = JACK_DEFAULT_AUDIO_TYPE, size_t bufferSize = 0)
 	{
@@ -45,10 +50,14 @@ protected:
 		jack_activate(handle);
 		Log::info(name, "Activated.");
 	}
+
+	virtual void onStart() { };
+	virtual void onStop() { }
 	virtual void onProcess(size_t nframes) = 0;
 	virtual void onShutdown() {};
 
 private:
+	bool _isRunning;
 	static int processCallback(jack_nframes_t, void* arg);
 	static void shutdownCallback(void* arg);
 };

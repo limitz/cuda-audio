@@ -1,5 +1,6 @@
 #include "conv.h"
 
+
 // TODO remove after refactoring
 extern WavFile* wav[];
 
@@ -47,7 +48,11 @@ __global__ static void f_pointwiseMultiplyAndScale(cufftComplex* r, const cufftC
 
 Convolution::Convolution(const std::string& name, size_t fftSize) : 
 	JackClient(name),
-	_fftSize(fftSize)
+	_fftSize(fftSize),
+	midiIn(nullptr),
+	left(nullptr),
+	right(nullptr),
+	input(nullptr)
 {
 	int rc;
 	for (auto i = 0; i<4; i++) 
@@ -85,7 +90,10 @@ Convolution::Convolution(const std::string& name, size_t fftSize) :
 			onembed, ostride, odist,
 			CUFFT_C2C, batchSize);
 	assert(0 == rc);
+}
 
+void Convolution::onStart()
+{
 	activate();
 	midiIn = addInput("input.midi", JACK_DEFAULT_MIDI_TYPE);
 	left = addOutput("output.left");
@@ -101,11 +109,14 @@ void Convolution::loadIR(size_t idx, const WavFile& wav)
 void Convolution::onProcess(size_t nframes)
 {
 	int rc;
-	
-	auto in = jack_port_get_buffer(input, nframes);
-	auto L = jack_port_get_buffer(left, nframes);
-	auto R = jack_port_get_buffer(right, nframes);
-	auto midi = jack_port_get_buffer(midiIn, nframes);
+
+	auto in = input ? jack_port_get_buffer(input, nframes) : nullptr;
+	auto L = left ? jack_port_get_buffer(left, nframes) : nullptr;
+	auto R = right ? jack_port_get_buffer(right, nframes) : nullptr;
+	auto midi = midiIn ? jack_port_get_buffer(midiIn, nframes) : nullptr;
+
+	if (!in || !L || !R || !midi) return;
+
 	auto nevts = jack_midi_get_event_count(midi);
 	for (auto i=0UL;i<nevts; i++)
 	{
