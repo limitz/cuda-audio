@@ -1,0 +1,21 @@
+#!/bin/sh
+sudo jetson_clocks
+
+echo "USBFS memory to 1000" 
+sudo sh -c 'echo 1000 > /sys/module/usbcore/parameters/usbfs_memory_mb'
+
+# increase MTU
+echo "MTU eth0 to 7750"
+sudo ifconfig eth0 mtu 7750
+
+# TX1 and TX2
+# These settings affect all types of connections on the system
+echo "Network buffer sizes"
+sudo sysctl -w net.core.rmem_max=33554432
+sudo sysctl -w net.core.wmem_max=33554432
+sudo sysctl -w net.core.rmem_default=33554432
+sudo sysctl -w net.core.wmem_default=33554432
+
+echo
+echo "- Go jetson go..."
+

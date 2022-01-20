@@ -18,7 +18,7 @@ GENCODE :=
 $(foreach sm,$(SMS), $(eval GENCODE += -gencode arch=compute_$(sm),code=sm_$(sm)))
 GENCODE += -gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM)
 else
-CFLAGS := -O3 -fPIC -Wall
+CFLAGS := -O3 -fPIC -Wall -DCONV_FFTSIZE=65536 -DCONV_GRIDSIZE=64 -DCONV_BLOCKSIZE=128
 IFLAGS := -I/usr/local/cuda/include
 LFLAGS := -rpath='$$ORIGIN'
 LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack

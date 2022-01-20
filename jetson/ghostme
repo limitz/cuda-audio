@@ -1,0 +1,3 @@
+#!/bin/bash
+export DISPLAY=:10
+Xorg -noreset +extension GLX +extension RENDER -config ./xorg.conf :10 &

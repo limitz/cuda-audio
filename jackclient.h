@@ -1,3 +1,5 @@
+#pragma once
+
 #include "gpu.h"
 #include <jack/jack.h>
 #include <jack/midiport.h>

@@ -1,0 +1,6 @@
+#!/bin/sh
+
+df --human-readable --output
+sudo dd if=/dev/zero of=/tmp/ddtest bs=8M count=16 oflag=dsync
+sudo rm /tmp/ddtest
+sudo hdparm -tT /dev/mmcblk0p1
