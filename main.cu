@@ -8,7 +8,7 @@
 #include "conv.h"
 
 #ifndef NUM_CONV_INSTANCES
-#define NUM_CONV_INSTANCES 2
+#define NUM_CONV_INSTANCES 1 
 #endif
 
 // TODO: remove after refactoring, extern decl in conv.cu
