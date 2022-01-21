@@ -7,6 +7,9 @@
 #include "jackclient.h"
 #include "conv.h"
 
+#ifndef NUM_CONV_INSTANCES
+#define NUM_CONV_INSTANCES 2
+#endif
 
 // TODO: remove after refactoring, extern decl in conv.cu
 WavFile* wav[38];
@@ -54,26 +57,42 @@ int main()
 	wav[36] = new WavFile("ir/1/Trig Room.wav");
 	wav[37] = new WavFile("ir/1/Vocal Duo.wav");
 
-	Convolution c;
-	c.start();
-
-	jack_connect(c.handle, "system:capture_1", jack_port_name(c.input));
-	jack_connect(c.handle, jack_port_name(c.left),  "system:playback_1");
-	jack_connect(c.handle, jack_port_name(c.right), "system:playback_2");
-
-#if 1
-	auto midiports = jack_get_ports(c.handle, NULL, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput);
-	while (*midiports)
+	Convolution* instances[NUM_CONV_INSTANCES];
+	for (auto i=0UL; i < NUM_CONV_INSTANCES; i++)
 	{
-		Log::info(__func__, "Found MIDI port: %s", *midiports);
-		jack_connect(c.handle, *midiports, jack_port_name(c.midiIn));
-		midiports++;
+		char* name = (char*)alloca(256);
+		sprintf(name, "cudaconv_%lu",i+1);
+
+		auto c = instances[i] = new Convolution(name);
+		c->start();
+
+		jack_connect(c->handle, "system:capture_1", jack_port_name(c->input));
+		jack_connect(c->handle, jack_port_name(c->left),  "system:playback_1");
+		jack_connect(c->handle, jack_port_name(c->right), "system:playback_2");
+
+		#if 1
+		auto midiports = jack_get_ports(c->handle, NULL, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput);
+		for (auto midiport = midiports; *midiport; midiport++)
+		{
+			Log::info(__func__, "Found MIDI port: %s", *midiport);
+			jack_connect(c->handle, *midiport, jack_port_name(c->midiIn));
+		}
+		jack_free(midiports);
+		#endif
+
 	}
-	//free(midiports);
-#endif
+
+	Log::info(__func__, "%sPress <enter> to quit...", escapeRgb(255,0,128).c_str());
 	std::cin.get();
-	c.stop();
-	Log::info(__func__, "Average convolution runtime: %f", c.avgRuntime());
+	
+	for (auto i=0UL; i < NUM_CONV_INSTANCES; i++)
+	{
+		auto c = instances[i];
+		if (c->isRunning()) c->stop();
+		Log::info(c->name, "Average convolution runtime: %f", c->avgRuntime());
+		delete c;
+	}
+
 
 	for (auto i=0UL; i<sizeof(wav)/sizeof(*wav); i++) delete wav[i];
 	return 0;

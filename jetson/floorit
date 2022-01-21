@@ -5,8 +5,8 @@ echo "USBFS memory to 1000"
 sudo sh -c 'echo 1000 > /sys/module/usbcore/parameters/usbfs_memory_mb'
 
 # increase MTU
-echo "MTU eth0 to 7750"
-sudo ifconfig eth0 mtu 7750
+#echo "MTU eth0 to 7750"
+#sudo ifconfig eth0 mtu 7750
 
 # TX1 and TX2
 # These settings affect all types of connections on the system
