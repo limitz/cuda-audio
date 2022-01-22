@@ -21,10 +21,11 @@ class Convolution : public JackClient
 public:
 	struct CC
 	{
+		uint8_t message;
 		uint8_t select, predelay, dry, wet;
 	} cc;
 
-	Convolution(const std::string& name = "Conv", uint8_t startCC = 0x15, size_t fftSize = CONV_FFTSIZE);
+	Convolution(const std::string& name = "Conv", uint8_t ccMessage = 0xB0, uint8_t ccStart = 0x15, size_t fftSize = CONV_FFTSIZE);
 
 	JackPort midiIn;
 	JackPort input;

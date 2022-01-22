@@ -58,7 +58,8 @@ int main()
 	wav[37] = new WavFile("ir/1/Vocal Duo.wav");
 
 	// Top row of my novation launchcontrol starts at 0x15
-	uint8_t startCC = 0x15;
+	uint8_t ccMessage = 0xB0;
+	uint8_t ccStart = 0x15;
 
 	Convolution* instances[NUM_CONV_INSTANCES];
 	for (auto i=0UL; i < NUM_CONV_INSTANCES; i++)
@@ -68,7 +69,7 @@ int main()
 
 		// There are 4 controls, let's assume simply that cc is contiguous
 		// Other mappings would require changing Convolution::cc member
-		auto c = instances[i] = new Convolution(name, startCC + 4 * i);
+		auto c = instances[i] = new Convolution(name, ccMessage + i, ccStart);
 		c->start();
 
 		// Auto connect to capture_<i+1>, there are nicer ways to do this but connecting ports

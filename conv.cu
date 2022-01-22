@@ -46,7 +46,7 @@ __global__ static void f_pointwiseMultiplyAndScale(cufftComplex* r, const cufftC
 	}
 }
 
-Convolution::Convolution(const std::string& name, uint8_t startCC, size_t fftSize) : 
+Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccStart, size_t fftSize) : 
 	JackClient(name),
 	_fftSize(fftSize),
 	midiIn(nullptr),
@@ -91,10 +91,11 @@ Convolution::Convolution(const std::string& name, uint8_t startCC, size_t fftSiz
 			CUFFT_C2C, batchSize);
 	assert(0 == rc);
 
-	cc.select = startCC;
-	cc.predelay = startCC + 1;
-	cc.dry = startCC + 2;
-	cc.wet = startCC + 3;
+	cc.message = ccMessage;
+	cc.select = ccStart;
+	cc.predelay = ccStart + 1;
+	cc.dry = ccStart + 2;
+	cc.wet = ccStart + 3;
 }
 
 void Convolution::onStart()
@@ -134,7 +135,7 @@ void Convolution::onProcess(size_t nframes)
 		std::cout << std::endl;
 #endif
 
-		if ((evt.buffer[0] & 0xF0) == 0xB0)
+		if (evt.buffer[0] == cc.message)
 		{
 			if (evt.buffer[1] == cc.select)
 			{
