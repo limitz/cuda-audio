@@ -4,18 +4,31 @@
 // TODO remove after refactoring
 extern WavFile* wav[];
 
-__global__ static void f_deinterleaveIR(cufftComplex* L, cufftComplex* R, float2* ir, size_t maxFrames, size_t irFrames, float dry, float wet, size_t predelay)
+__global__ static void f_deinterleaveIRAndInterpolate(
+		cufftComplex* L, cufftComplex* R, float2* ir, 
+		size_t maxFrames, size_t irFrames, float interpolationSpeed,
+		float dry, float wet, size_t predelay)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
 	for (int s = offset.x; s < maxFrames; s += stride.x)
 	{
+
 		auto d = s ? 0 : dry;
 		auto i = max(s - (int)predelay, 0);
 		auto v = i < irFrames ? ir[i] * wet + make_float2(d,d) : make_float2(0,0);
-		L[s] = {__saturatef(fabs(v.x)), 0};
-		R[s] = {__saturatef(fabs(v.y)), 0};
+		cufftComplex vl = {__saturatef(fabs(v.x)),0};
+		cufftComplex vr = {__saturatef(fabs(v.y)),0};
+		
+		if (interpolationSpeed < 1)
+		{
+			float factor = 1 - interpolationSpeed;
+			vl -= (vl - L[s]) * factor;
+			vr -= (vr - R[s]) * factor;
+		}
+		L[s] = vl;
+		R[s] = vr;
 	}
 }
 
@@ -166,13 +179,16 @@ void Convolution::onProcess(size_t nframes)
 	//wav[_widx]->buffer[0] = {0,0};
 
 	// move impulse response to irFFT.left , irFFT.right
-	f_deinterleaveIR <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[1] >>> (
+	f_deinterleaveIRAndInterpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[1] >>> (
 			ir.left, ir.right,
 			wav[_widx]->buffer, 
 			_fftSize - nframes,
 			wav[_widx]->numFrames, 
+			0.01f,
 			_dry, _vol * _wet, _predelay);
 		
+	//_widxPrev = _widx;
+	// ir still holds previous IR
 	// copy input to device
 	rc = cudaMemcpy2DAsync(
 			cin,  sizeof(cufftComplex), 
