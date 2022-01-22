@@ -57,19 +57,34 @@ int main()
 	wav[36] = new WavFile("ir/1/Trig Room.wav");
 	wav[37] = new WavFile("ir/1/Vocal Duo.wav");
 
+	// Top row of my novation launchcontrol starts at 0x15
+	uint8_t startCC = 0x15;
+
 	Convolution* instances[NUM_CONV_INSTANCES];
 	for (auto i=0UL; i < NUM_CONV_INSTANCES; i++)
 	{
 		char* name = (char*)alloca(256);
 		sprintf(name, "cudaconv_%lu",i+1);
 
-		auto c = instances[i] = new Convolution(name);
+		// There are 4 controls, let's assume simply that cc is contiguous
+		// Other mappings would require changing Convolution::cc member
+		auto c = instances[i] = new Convolution(name, startCC + 4 * i);
 		c->start();
 
+		// Auto connect to capture_<i+1>, there are nicer ways to do this but connecting ports
+		// is going to be dealt with later in different code.
+		#if 1
+		sprintf(name, "system:capture_%d", i+1);
+		jack_connect(c->handle, name, jack_port_name(c->input));
+		#else
 		jack_connect(c->handle, "system:capture_1", jack_port_name(c->input));
+		#endif
+		
+		// Connect to stereo output, assumed to be available
 		jack_connect(c->handle, jack_port_name(c->left),  "system:playback_1");
 		jack_connect(c->handle, jack_port_name(c->right), "system:playback_2");
 
+		// Auto connect all MIDI ports
 		#if 1
 		auto midiports = jack_get_ports(c->handle, NULL, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput);
 		for (auto midiport = midiports; *midiport; midiport++)

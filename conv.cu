@@ -46,7 +46,7 @@ __global__ static void f_pointwiseMultiplyAndScale(cufftComplex* r, const cufftC
 	}
 }
 
-Convolution::Convolution(const std::string& name, size_t fftSize) : 
+Convolution::Convolution(const std::string& name, uint8_t startCC, size_t fftSize) : 
 	JackClient(name),
 	_fftSize(fftSize),
 	midiIn(nullptr),
@@ -62,7 +62,7 @@ Convolution::Convolution(const std::string& name, size_t fftSize) :
 	}
 
 
-	cufftComplex** cc[] = {
+	cufftComplex** pcc[] = {
 		&cin, &cinFFT, 
 		&ir.left, &ir.right,
 		&irFFT.left, &irFFT.right,
@@ -70,9 +70,9 @@ Convolution::Convolution(const std::string& name, size_t fftSize) :
 		&residual.left, &residual.right
 	};
 
-	for (auto i = 0UL; i < sizeof(cc) / sizeof(*cc); i++)
+	for (auto i = 0UL; i < sizeof(pcc) / sizeof(*pcc); i++)
 	{
-		rc = cudaMalloc(cc[i], fftSize * sizeof(cufftComplex));
+		rc = cudaMalloc(pcc[i], fftSize * sizeof(cufftComplex));
 		assert(cudaSuccess == rc);
 	}
 
@@ -90,6 +90,11 @@ Convolution::Convolution(const std::string& name, size_t fftSize) :
 			onembed, ostride, odist,
 			CUFFT_C2C, batchSize);
 	assert(0 == rc);
+
+	cc.select = startCC;
+	cc.predelay = startCC + 1;
+	cc.dry = startCC + 2;
+	cc.wet = startCC + 3;
 }
 
 void Convolution::onStart()
@@ -131,21 +136,22 @@ void Convolution::onProcess(size_t nframes)
 
 		if ((evt.buffer[0] & 0xF0) == 0xB0)
 		{
-			switch (evt.buffer[1])
+			if (evt.buffer[1] == cc.select)
 			{
-			case 0x15:
 				_widx = evt.buffer[2] >> 2;
 				std::cout << wav[_widx]->path.c_str() << std::endl;
-				break;
-			case 0x16:
+			}
+			else if (evt.buffer[1] == cc.predelay)
+			{
 				_predelay = evt.buffer[2] << 6;
-				break;
-			case 0x17:
+			}
+			else if (evt.buffer[1] == cc.dry)
+			{
 				_dry = evt.buffer[2] / 127.0f;
-				break;
-			case 0x18:
+			}
+			else if (evt.buffer[1] == cc.wet)
+			{
 				_wet = evt.buffer[2] / 127.0f;
-				break;
 			}
 		}
 	}
@@ -164,7 +170,7 @@ void Convolution::onProcess(size_t nframes)
 			wav[_widx]->buffer, 
 			_fftSize - nframes,
 			wav[_widx]->numFrames, 
-			_dry, _wet, _predelay);
+			_dry, _vol * _wet, _predelay);
 		
 	// copy input to device
 	rc = cudaMemcpy2DAsync(
@@ -187,8 +193,8 @@ void Convolution::onProcess(size_t nframes)
 	assert(cudaSuccess == rc);
 
 	// multiply ir with input
-	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.left, irFFT.left, cinFFT, _fftSize, _vol * 1.0f/_fftSize);
-	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.right, irFFT.right, cinFFT, _fftSize, _vol * 1.0f/_fftSize);
+	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.left, irFFT.left, cinFFT, _fftSize, 1.0f/_fftSize);
+	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.right, irFFT.right, cinFFT, _fftSize, 1.0f/_fftSize);
 
 	// take the inverse FFT of the output
 	rc = cufftExecC2C(_plan, output.left, output.left, CUFFT_INVERSE);
