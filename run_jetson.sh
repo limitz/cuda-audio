@@ -1,3 +1,3 @@
 #!/bin/sh
-./jetson/floorit
+./jetson/jfloorit
 ./bin/program
