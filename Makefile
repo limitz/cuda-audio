@@ -4,10 +4,10 @@ PROC = $(shell uname -m)
 ARCH = $(PROC)-linux
 
 ifeq ($(PROC), x86_64)
-CFLAGS := -std=c++17 -O3 -fPIC -Wall -DNUM_CONV_INSTANCES=2
+CFLAGS := -std=c++17 -O3 -fPIC -Wall -DNUM_CONV_INSTANCES=8
 IFLAGS := -I/usr/local/cuda/include
 LFLAGS := -rpath='$$ORIGIN'
-LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack
+LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack -lncursesw
 SMS := 53 61 86
 HIGHEST_SM = $(lastword $(sort $(SMS)))
 NVCCFLAGS := -m64 -rdc=true -std=c++17 
@@ -21,7 +21,7 @@ else
 CFLAGS := -O3 -fPIC -Wall -DCONV_FFTSIZE=65536 -DCONV_GRIDSIZE=64 -DCONV_BLOCKSIZE=128
 IFLAGS := -I/usr/local/cuda/include
 LFLAGS := -rpath='$$ORIGIN'
-LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack
+LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack -lncursesw
 SMS := 53 72 
 HIGHEST_SM = $(lastword $(sort $(SMS)))
 NVCCFLAGS := -m64 -rdc=true 
@@ -33,7 +33,7 @@ $(foreach sm,$(SMS), $(eval GENCODE += -gencode arch=compute_$(sm),code=sm_$(sm)
 GENCODE += -gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM)
 endif
 
-SRC_DIR := .
+SRC_DIR := src
 BIN_DIR := bin
 OBJ_DIR := obj
 

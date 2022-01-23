@@ -1,4 +1,5 @@
 #include <cufft.h>
+#include <ncurses.h>
 #include <iostream>
 #include <sstream>
 #include <vector>
@@ -13,6 +14,98 @@
 
 // TODO: remove after refactoring, extern decl in conv.cu
 WavFile* wav[38];
+
+const wchar_t* logolines[] = {
+	L"██     ██ ██ ██████  ██   ██  █████  ████████      ██████ ██    ██ ██████   █████   ██████  ██████  ███    ██ ██    ██ ",
+	L"██     ██ ██ ██   ██ ██  ██  ██   ██    ██        ██      ██    ██ ██   ██ ██   ██ ██      ██    ██ ████   ██ ██    ██ ",
+	L"██  █  ██ ██ ██████  █████   ███████    ██        ██      ██    ██ ██   ██ ███████ ██      ██    ██ ██ ██  ██ ██    ██ ",
+	L"██ ███ ██ ██ ██      ██  ██  ██   ██    ██        ██      ██    ██ ██   ██ ██   ██ ██      ██    ██ ██  ██ ██  ██  ██  ",
+	L" ███ ███  ██ ██      ██   ██ ██   ██    ██         ██████  ██████  ██████  ██   ██  ██████  ██████  ██   ████   ████   ",
+};
+
+int display(JackClient* c)
+{
+	setlocale(LC_ALL, "");
+	initscr();
+	if (!has_colors())
+	{
+		endwin();
+		Log::error(__func__, "Terminal does not have colors");
+		return 1;
+	}
+	if (!can_change_color())
+	{
+		endwin();
+		Log::error(__func__, "Unable to change colors, probably need to `export TERM=xterm-256color`");
+		return 2;
+	}
+	start_color();
+
+	init_color(1, 800, 100, 400);
+	init_color(2, 800, 100, 500);
+	init_color(3, 800, 100, 600);
+	init_color(4, 800, 100, 700);
+	init_color(5, 800, 100, 800);
+	init_color(6, 600, 300, 100);
+	init_color(7, 700, 200, 100);
+	init_color(8, 800, 100, 100);
+	init_color(9, 500, 500, 500);
+	init_color(10, 100, 100, 100);
+	init_color(11, 150, 150, 150);
+
+	init_pair(1, 1, 0);
+	init_pair(2, 2, 0);
+	init_pair(3, 3, 0);
+	init_pair(4, 4, 0);
+	init_pair(5, 5, 0);
+	init_pair(6, 6, 0);
+	init_pair(7, 7, 0);
+	init_pair(8, 8, 0);
+	init_pair(9, 9, 8);
+	init_pair(10, 9, 10);
+	init_pair(11, 9, 11);
+
+	cbreak();
+	keypad(stdscr, TRUE);
+	noecho();
+
+	size_t rows, cols;
+	getmaxyx(stdscr, rows, cols);
+
+	int i = 0;
+	for (int l = 0; l < 5; l++)
+	{
+		attron(COLOR_PAIR(1 + l));
+		mvaddwstr(1+l, 1, logolines[l]);
+	}
+
+	auto midiports = jack_get_ports(c->handle, NULL, JACK_DEFAULT_AUDIO_TYPE, 0);
+	for (auto midiport = midiports; *midiport; midiport++)
+	{
+		char* client = (char*)alloca(strlen(*midiport) + 1);
+		strcpy(client, *midiport);
+		char* port = strchr(client, ':');
+		*port = 0;
+		port++;
+		
+		attron(COLOR_PAIR(10 + (i & 1)));
+		mvprintw(10+ ++i, 10, "%-12s | %-24s", client, port);
+	}
+	refresh();
+
+	for (int ch, running = 1; running && (ch = getch()); )
+	{
+		switch (ch)
+		{
+		case 'q': 
+		case KEY_F(10):
+			running = 0;
+			break;
+		};
+	}
+	endwin();
+	return 0;
+}
 
 int main()
 {
@@ -75,7 +168,7 @@ int main()
 		// Auto connect to capture_<i+1>, there are nicer ways to do this but connecting ports
 		// is going to be dealt with later in different code.
 		#if 1
-		sprintf(name, "system:capture_%d", i+1);
+		sprintf(name, "system:capture_%lu", i+1);
 		jack_connect(c->handle, name, jack_port_name(c->input));
 		#else
 		jack_connect(c->handle, "system:capture_1", jack_port_name(c->input));
@@ -98,9 +191,8 @@ int main()
 
 	}
 
-	Log::info(__func__, "%sPress <enter> to quit...", escapeRgb(255,0,128).c_str());
-	std::cin.get();
-	
+	int rc = display(instances[0]);
+
 	for (auto i=0UL; i < NUM_CONV_INSTANCES; i++)
 	{
 		auto c = instances[i];
@@ -111,5 +203,5 @@ int main()
 
 
 	for (auto i=0UL; i<sizeof(wav)/sizeof(*wav); i++) delete wav[i];
-	return 0;
+	return rc;
 }
