@@ -32,6 +32,26 @@ __global__ static void f_deinterleaveIRAndInterpolate(
 	}
 }
 
+__device__ inline cufftComplex conjugate(cufftComplex v) { return { v.x, -v.y }; }
+__device__ inline cufftComplex timesj(cufftComplex v) { return { -v.y, v.x }; }
+
+__global__ static void f_unpackC22R(cufftComplex* L, cufftComplex* R, cufftComplex* src, size_t fftSize)
+{
+	auto stride = gridDim * blockDim;
+	auto offset = blockDim * blockIdx + threadIdx;
+
+	assert(1 == __popcll(fftSize));
+	auto m = fftSize - 1;
+
+	for (auto s = offset.x; s < fftSize; s += stride.x)
+	{
+		auto va = src[s];
+		auto vb = conjugate(src[(fftSize - s) & m]);
+		L[s] = 0.5f * (va + vb);
+		R[s] = timesj(-0.5f * (va - vb));
+	}
+}
+
 __global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* a, size_t n)
 {
 	auto stride = gridDim * blockDim;
@@ -153,7 +173,7 @@ void Convolution::onProcess(size_t nframes)
 			if (evt.buffer[1] == cc.select)
 			{
 				_widx = evt.buffer[2] >> 2;
-				std::cout << wav[_widx]->path.c_str() << std::endl;
+				//std::cout << wav[_widx]->path.c_str() << std::endl;
 			}
 			else if (evt.buffer[1] == cc.predelay)
 			{
@@ -179,16 +199,36 @@ void Convolution::onProcess(size_t nframes)
 	//wav[_widx]->buffer[0] = {0,0};
 
 	// move impulse response to irFFT.left , irFFT.right
-	f_deinterleaveIRAndInterpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[1] >>> (
+#if 0
+	f_deinterleaveIRAndInterpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			ir.left, ir.right,
 			wav[_widx]->buffer, 
 			_fftSize - nframes,
 			wav[_widx]->numFrames, 
 			0.01f,
 			_dry, _vol * _wet, _predelay);
-		
-	//_widxPrev = _widx;
-	// ir still holds previous IR
+	
+	// inplace transform irFFT.left and irFFT.right
+	rc = cufftExecC2C(_plan, ir.left, irFFT.left, CUFFT_FORWARD);
+	assert(cudaSuccess == rc);
+	rc = cufftExecC2C(_plan, ir.right, irFFT.right, CUFFT_FORWARD);
+	assert(cudaSuccess == rc);
+#else
+	rc = cudaMemsetAsync(ir.left, 0, sizeof(cufftComplex) * _fftSize, _streams[0]);
+	assert(cudaSuccess == rc);
+
+	rc = cudaMemcpyAsync(ir.left, wav[_widx]->buffer, 
+			sizeof(cufftComplex) * min(wav[_widx]->numFrames, _fftSize - nframes), 
+			cudaMemcpyDeviceToDevice, _streams[0]);
+	assert(cudaSuccess == rc);
+	
+	rc = cufftExecC2C(_plan, ir.left, ir.left, CUFFT_FORWARD);
+	assert(cudaSuccess == rc);
+	
+	f_unpackC22R <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			irFFT.left, irFFT.right, ir.left, _fftSize);
+#endif
+
 	// copy input to device
 	rc = cudaMemcpy2DAsync(
 			cin,  sizeof(cufftComplex), 
@@ -198,15 +238,6 @@ void Convolution::onProcess(size_t nframes)
 	assert(cudaSuccess == rc);
 	// get FFT of input
 	rc = cufftExecC2C(_plan, cin, cinFFT, CUFFT_FORWARD);
-	assert(cudaSuccess == rc);
-	// await deinterleaveIR
-	rc = cudaStreamSynchronize(_streams[1]);
-	assert(cudaSuccess == rc);
-	
-	// inplace transform irFFT.left and irFFT.right
-	rc = cufftExecC2C(_plan, ir.left, irFFT.left, CUFFT_FORWARD);
-	assert(cudaSuccess == rc);
-	rc = cufftExecC2C(_plan, ir.right, irFFT.right, CUFFT_FORWARD);
 	assert(cudaSuccess == rc);
 
 	// multiply ir with input

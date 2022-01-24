@@ -12,6 +12,10 @@
 #define NUM_CONV_INSTANCES 1 
 #endif
 
+#ifndef NUM_SKIP_INPUTS
+#define NUM_SKIP_INPUTS 0
+#endif
+
 // TODO: remove after refactoring, extern decl in conv.cu
 WavFile* wav[38];
 
@@ -168,7 +172,7 @@ int main()
 		// Auto connect to capture_<i+1>, there are nicer ways to do this but connecting ports
 		// is going to be dealt with later in different code.
 		#if 1
-		sprintf(name, "system:capture_%lu", i+1);
+		sprintf(name, "system:capture_%lu", i+1+NUM_SKIP_INPUTS);
 		jack_connect(c->handle, name, jack_port_name(c->input));
 		#else
 		jack_connect(c->handle, "system:capture_1", jack_port_name(c->input));
