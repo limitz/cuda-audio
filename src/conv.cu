@@ -1,9 +1,5 @@
 #include "conv.h"
 
-
-// TODO remove after refactoring
-extern WavFile* wav[];
-
 __global__ static void f_deinterleaveIRAndInterpolate(
 		cufftComplex* L, cufftComplex* R, float2* ir, 
 		size_t maxFrames, size_t irFrames, float interpolationSpeed,
@@ -43,12 +39,20 @@ __global__ static void f_unpackC22R(cufftComplex* L, cufftComplex* R, cufftCompl
 	assert(1 == __popcll(fftSize));
 	auto m = fftSize - 1;
 
-	for (auto s = offset.x; s < fftSize; s += stride.x)
+	for (auto s = offset.x; s < fftSize/2; s += stride.x)
 	{
-		auto va = src[s];
-		auto vb = conjugate(src[(fftSize - s) & m]);
-		L[s] = 0.5f * (va + vb);
-		R[s] = timesj(-0.5f * (va - vb));
+		auto idxa = s;
+		auto idxb = (fftSize - s) & m;
+
+		auto va = src[idxa];
+		auto vb = conjugate(src[idxb]);
+		auto la = 0.5f * (va + vb);
+		auto lb = timesj(-0.5f * (va - vb));
+
+		L[idxa] = la;
+		R[idxa] = lb;
+		L[idxb] = conjugate(la);
+		R[idxb] = conjugate(lb);
 	}
 }
 
@@ -140,9 +144,32 @@ void Convolution::onStart()
 	input = addInput("input.mono");
 }
 
-void Convolution::loadIR(size_t idx, const WavFile& wav)
+// TODO, make thread safe
+void Convolution::prepare(size_t idx, const WavFile& wav, size_t nframes)
 {
-	assert(0 && "Not implemented yet");
+	int rc;
+	
+	cudaStream_t stream = _streams[0];
+	cufftSetStream(_plan, stream);
+
+	auto buf = _irBuffers[idx];
+	if (buf) cudaFree(buf);
+
+	// TODO pack real fft into half size buffer
+	rc = cudaMalloc(&buf, sizeof(cufftComplex) * (_fftSize << 1));
+	assert(cudaSuccess == rc);
+	
+	auto n = min(wav.numFrames, _fftSize - nframes);
+	rc = cudaMemcpyAsync(buf, wav.buffer, sizeof(cufftComplex) * n, cudaMemcpyDeviceToDevice, stream);
+	assert(cudaSuccess == rc);
+	
+	rc = cufftExecC2C(_plan, buf, buf, CUFFT_FORWARD);
+	assert(cudaSuccess == rc);
+	
+	f_unpackC22R <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, stream >>> (buf, buf+_fftSize, buf,  _fftSize);
+
+	cudaStreamSynchronize(stream);
+	_irBuffers[idx] = buf;
 }
 
 void Convolution::onProcess(size_t nframes)
@@ -214,19 +241,12 @@ void Convolution::onProcess(size_t nframes)
 	rc = cufftExecC2C(_plan, ir.right, irFFT.right, CUFFT_FORWARD);
 	assert(cudaSuccess == rc);
 #else
-	rc = cudaMemsetAsync(ir.left, 0, sizeof(cufftComplex) * _fftSize, _streams[0]);
-	assert(cudaSuccess == rc);
-
-	rc = cudaMemcpyAsync(ir.left, wav[_widx]->buffer, 
-			sizeof(cufftComplex) * min(wav[_widx]->numFrames, _fftSize - nframes), 
+	rc = cudaMemcpyAsync(irFFT.left, _irBuffers[_widx], sizeof(cufftComplex) * _fftSize, 
 			cudaMemcpyDeviceToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
-	
-	rc = cufftExecC2C(_plan, ir.left, ir.left, CUFFT_FORWARD);
+	rc = cudaMemcpyAsync(irFFT.left, _irBuffers[_widx]+_fftSize, sizeof(cufftComplex) * _fftSize, 
+			cudaMemcpyDeviceToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
-	
-	f_unpackC22R <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			irFFT.left, irFFT.right, ir.left, _fftSize);
 #endif
 
 	// copy input to device

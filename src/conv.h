@@ -1,5 +1,7 @@
 #pragma once
 #include <cufft.h>
+#include <map>
+
 #include "gpu.h"
 #include "wav.h"
 #include "jackclient.h"
@@ -26,6 +28,8 @@ public:
 	} cc;
 
 	Convolution(const std::string& name = "Conv", uint8_t ccMessage = 0xB0, uint8_t ccStart = 0x15, size_t fftSize = CONV_FFTSIZE);
+	
+	// TODO make destructor that destroys all buffers
 
 	JackPort midiIn;
 	JackPort input;
@@ -36,11 +40,10 @@ public:
 	virtual void onStart() override;
 	inline double avgRuntime() const { return _nruns ? _runtime / _nruns : 0; }
 
-	void loadIR(size_t idx, const WavFile& wav);
+	void prepare(size_t idx, const WavFile& wav, size_t nframes = 512);
 
 private:
 	cufftHandle _plan;
-	
 	cufftComplex* cin;
 	cufftComplex* cinFFT;
 
@@ -48,6 +51,8 @@ private:
 	{
 		cufftComplex* left, *right;
 	} ir, irFFT, output, residual;
+
+	std::map<size_t, cufftComplex*> _irBuffers;
 
 	size_t _widx = 0; // index of IR wav file
 	size_t _predelay = 0;

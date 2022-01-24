@@ -1,0 +1,38 @@
+ir/1/Block Inside.wav
+ir/1/Bottle Hall.wav
+ir/1/Cement Blocks 1.wav
+ir/1/Cement Blocks 2.wav
+ir/1/Chateau de Logne, Outside.wav
+ir/1/Conic Long Echo Hall.wav
+ir/1/Deep Space.wav
+ir/1/Derlon Sanctuary.wav
+ir/1/Direct Cabinet N1.wav
+ir/1/Direct Cabinet N2.wav
+ir/1/Direct Cabinet N3.wav
+ir/1/Direct Cabinet N4.wav
+ir/1/Five Columns.wav
+ir/1/Five Columns Long.wav
+ir/1/French 18th Century Salon.wav
+ir/1/Going Home.wav
+ir/1/Greek 7 Echo Hall.wav
+ir/1/Highly Damped Large Room.wav
+ir/1/In The Silo.wav
+ir/1/In The Silo Revised.wav
+ir/1/Large Bottle Hall.wav
+ir/1/Large Long Echo Hall.wav
+ir/1/Large Wide Echo Hall.wav
+ir/1/Masonic Lodge.wav
+ir/1/Musikvereinsaal.wav
+ir/1/Narrow Bumpy Space.wav
+ir/1/Nice Drum Room.wav
+ir/1/On a Star.wav
+ir/1/Parking Garage.wav
+ir/1/Rays.wav
+ir/1/Right Glass Triangle.wav
+ir/1/Ruby Room.wav
+ir/1/Scala Milan Opera Hall.wav
+ir/1/Small Drum Room.wav
+ir/1/Small Prehistoric Cave.wav
+ir/1/St Nicolaes Church.wav
+ir/1/Trig Room.wav
+ir/1/Vocal Duo.wav
