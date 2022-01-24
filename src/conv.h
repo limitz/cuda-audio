@@ -24,7 +24,7 @@ public:
 	struct CC
 	{
 		uint8_t message;
-		uint8_t select, predelay, dry, wet;
+		uint8_t select, predelay, dry, wet, isteps;
 	} cc;
 
 	Convolution(const std::string& name = "Conv", uint8_t ccMessage = 0xB0, uint8_t ccStart = 0x15, size_t fftSize = CONV_FFTSIZE);
@@ -55,12 +55,13 @@ private:
 	std::map<size_t, cufftComplex*> _irBuffers;
 
 	size_t _widx = 0; // index of IR wav file
-	size_t _maxPredelay = 8192;
+	size_t _maxPredelay = 4096;
 	float _predelay = 0.0f;
-	float _wet = 1.0f;
+	float _wet = 0.5f;
 	float _dry = 0.0f;
 
-	size_t _interpolationSteps = 1000;
+	size_t _maxInterpolationSteps = 500;
+	size_t _interpolationSteps = 100;
 	double _runtime = 0;
 	int _nruns = -10;
 	size_t _delay = 1600;

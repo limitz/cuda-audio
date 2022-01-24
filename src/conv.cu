@@ -134,6 +134,7 @@ Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccS
 	cc.predelay = ccStart + 1;
 	cc.dry = ccStart + 2;
 	cc.wet = ccStart + 3;
+	cc.isteps = ccStart + 4;
 }
 
 void Convolution::onStart()
@@ -200,8 +201,8 @@ void Convolution::onProcess(size_t nframes)
 		{
 			if (evt.buffer[1] == cc.select)
 			{
-				_widx = evt.buffer[2] >> 2;
-				_interpolationSteps = 1000;
+				_widx = evt.buffer[2] * _irBuffers.size() / 0x80;
+				_interpolationSteps = _maxInterpolationSteps;
 				//std::cout << wav[_widx]->path.c_str() << std::endl;
 			}
 			else if (evt.buffer[1] == cc.predelay)
@@ -215,6 +216,14 @@ void Convolution::onProcess(size_t nframes)
 			else if (evt.buffer[1] == cc.wet)
 			{
 				_wet = evt.buffer[2] / 127.0f;
+			}
+			else if (evt.buffer[1] == cc.isteps)
+			{
+				_maxInterpolationSteps = evt.buffer[2] * 1000 / 0x80 + 1;
+				if (_maxInterpolationSteps > _interpolationSteps)
+				{
+					_interpolationSteps = _maxInterpolationSteps;
+				}
 			}
 		}
 	}
