@@ -45,14 +45,15 @@ __global__ static void f_unpackC22R(cufftComplex* L, cufftComplex* R, cufftCompl
 	}
 }
 
-__global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* a, size_t n)
+__global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* a, const cufftComplex* b, size_t n, size_t predelay)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
 	for (auto s = offset.x; s < n; s += stride.x)
 	{
-		auto v = r[s] + a[s];
+		auto v = a[s];
+		if (s >= predelay) v += b[s-predelay];
 		r[s] = clamp(v, -1.0f, 1.0f);
 	}
 }
@@ -92,8 +93,6 @@ Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccS
 		&cin, &cinFFT, 
 		&ir.left, &ir.right,
 		&irFFT.left, &irFFT.right,
-		&output.left, &output.right,
-		&residual.left, &residual.right
 	};
 
 	for (auto i = 0UL; i < sizeof(pcc) / sizeof(*pcc); i++)
@@ -101,6 +100,19 @@ Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccS
 		rc = cudaMalloc(pcc[i], fftSize * sizeof(cufftComplex));
 		assert(cudaSuccess == rc);
 	}
+		
+	// TODO make this just float
+	rc = cudaMalloc(&residual.left, (fftSize + _maxPredelay) * sizeof(cufftComplex));
+	assert(cudaSuccess == rc);
+
+	rc = cudaMalloc(&residual.right, (fftSize + _maxPredelay) * sizeof(cufftComplex));
+	assert(cudaSuccess == rc);
+	
+	rc = cudaMalloc(&output.left, (fftSize + _maxPredelay) * sizeof(cufftComplex));
+	assert(cudaSuccess == rc);
+
+	rc = cudaMalloc(&output.right, (fftSize + _maxPredelay) * sizeof(cufftComplex));
+	assert(cudaSuccess == rc);
 
 	int n[] = { (int)fftSize };
 	int inembed[] = { (int)fftSize };
@@ -194,7 +206,7 @@ void Convolution::onProcess(size_t nframes)
 			}
 			else if (evt.buffer[1] == cc.predelay)
 			{
-				_predelay = evt.buffer[2] << 6;
+				_predelay = evt.buffer[2] / 127.0f;
 			}
 			else if (evt.buffer[1] == cc.dry)
 			{
@@ -212,43 +224,20 @@ void Convolution::onProcess(size_t nframes)
 	cudaEventCreate(&stopped);
 	cudaEventRecord(started, _streams[0]);
 	cufftSetStream(_plan, _streams[0]);
-	
-	//wav[_widx]->buffer[0] = {0,0};
 
-	// move impulse response to irFFT.left , irFFT.right
-#if 0
-	f_deinterleaveIRAndInterpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			ir.left, ir.right,
-			wav[_widx]->buffer, 
-			_fftSize - nframes,
-			wav[_widx]->numFrames, 
-			0.01f,
-			_dry, _vol * _wet, _predelay);
-	
-	// inplace transform irFFT.left and irFFT.right
-	rc = cufftExecC2C(_plan, ir.left, irFFT.left, CUFFT_FORWARD);
-	assert(cudaSuccess == rc);
-	rc = cufftExecC2C(_plan, ir.right, irFFT.right, CUFFT_FORWARD);
-	assert(cudaSuccess == rc);
-#else
-	
+
+	// interpolate to IR FFT
 	rc = cudaMemcpyAsync(ir.left, _irBuffers[_widx], sizeof(cufftComplex) * _fftSize, 
 			cudaMemcpyDeviceToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
-	
 	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			irFFT.left, irFFT.left, ir.left, _fftSize, _interpolationSteps, _wet);
-	
-
 	rc = cudaMemcpyAsync(ir.right, _irBuffers[_widx]+_fftSize, sizeof(cufftComplex) * _fftSize, 
 			cudaMemcpyDeviceToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
-
 	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			irFFT.right, irFFT.right, ir.right, _fftSize, _interpolationSteps, _wet);
-	
 	if (_interpolationSteps > 1) _interpolationSteps--;
-#endif
 
 	// copy input to device
 	rc = cudaMemcpy2DAsync(
@@ -257,6 +246,7 @@ void Convolution::onProcess(size_t nframes)
 			sizeof(float), nframes,
 			cudaMemcpyHostToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
+
 	// get FFT of input
 	rc = cufftExecC2C(_plan, cin, cinFFT, CUFFT_FORWARD);
 	assert(cudaSuccess == rc);
@@ -265,15 +255,16 @@ void Convolution::onProcess(size_t nframes)
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.left, irFFT.left, cinFFT, _fftSize, 1.0f/_fftSize);
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.right, irFFT.right, cinFFT, _fftSize, 1.0f/_fftSize);
 
+	auto tmp = ir;
 	// take the inverse FFT of the output
-	rc = cufftExecC2C(_plan, output.left, output.left, CUFFT_INVERSE);
+	rc = cufftExecC2C(_plan, output.left, tmp.left, CUFFT_INVERSE);
 	assert(cudaSuccess == rc);
-	rc = cufftExecC2C(_plan, output.right, output.right, CUFFT_INVERSE);
+	rc = cufftExecC2C(_plan, output.right, tmp.right, CUFFT_INVERSE);
 	assert(cudaSuccess == rc);
 		
 	// Add the residual
-	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.left, residual.left, _fftSize - nframes);
-	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.right, residual.right, _fftSize - nframes);
+	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.left, residual.left, tmp.left, _fftSize, (size_t)(_predelay * _maxPredelay));
+	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.right, residual.right, tmp.right, _fftSize, (size_t)(_predelay * _maxPredelay));
 	
 	// Copy output to host
 	rc = cudaMemcpy2DAsync(L, sizeof(float), output.left, sizeof(cufftComplex),
@@ -287,13 +278,13 @@ void Convolution::onProcess(size_t nframes)
 	rc = cudaMemcpyAsync(
 			residual.left, 
 			output.left + nframes, 
-			(_fftSize - nframes) * sizeof(cufftComplex), 
+			(_fftSize + _maxPredelay - nframes) * sizeof(cufftComplex), 
 			cudaMemcpyDeviceToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
 	rc = cudaMemcpyAsync(
 			residual.right, 
 			output.right + nframes, 
-			(_fftSize - nframes) * sizeof(cufftComplex), 
+			(_fftSize + _maxPredelay - nframes) * sizeof(cufftComplex), 
 			cudaMemcpyDeviceToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
 
