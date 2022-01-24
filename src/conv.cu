@@ -1,30 +1,19 @@
 #include "conv.h"
 
-__global__ static void f_deinterleaveIRAndInterpolate(
-		cufftComplex* L, cufftComplex* R, float2* ir, 
-		size_t maxFrames, size_t irFrames, float interpolationSpeed,
-		float dry, float wet, size_t predelay)
+__global__ static void f_interpolate(
+		cufftComplex* dst, cufftComplex* a, cufftComplex* b, 
+		size_t fftSize, size_t steps, float wet)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
-	for (int s = offset.x; s < maxFrames; s += stride.x)
+	for (int s = offset.x; s < fftSize; s += stride.x)
 	{
-
-		auto d = s ? 0 : dry;
-		auto i = max(s - (int)predelay, 0);
-		auto v = i < irFrames ? ir[i] * wet + make_float2(d,d) : make_float2(0,0);
-		cufftComplex vl = {__saturatef(fabs(v.x)),0};
-		cufftComplex vr = {__saturatef(fabs(v.y)),0};
-		
-		if (interpolationSpeed < 1)
-		{
-			float factor = 1 - interpolationSpeed;
-			vl -= (vl - L[s]) * factor;
-			vr -= (vr - R[s]) * factor;
-		}
-		L[s] = vl;
-		R[s] = vr;
+		auto va = a[s];
+		auto vb = b[s] * wet;
+		auto vd = (vb - va) / (steps + 5); // just add a little to wet changes
+		auto vv = va + vd;
+		dst[s] = vv;
 	}
 }
 
@@ -200,6 +189,7 @@ void Convolution::onProcess(size_t nframes)
 			if (evt.buffer[1] == cc.select)
 			{
 				_widx = evt.buffer[2] >> 2;
+				_interpolationSteps = 1000;
 				//std::cout << wav[_widx]->path.c_str() << std::endl;
 			}
 			else if (evt.buffer[1] == cc.predelay)
@@ -241,12 +231,23 @@ void Convolution::onProcess(size_t nframes)
 	rc = cufftExecC2C(_plan, ir.right, irFFT.right, CUFFT_FORWARD);
 	assert(cudaSuccess == rc);
 #else
-	rc = cudaMemcpyAsync(irFFT.left, _irBuffers[_widx], sizeof(cufftComplex) * _fftSize, 
+	
+	rc = cudaMemcpyAsync(ir.left, _irBuffers[_widx], sizeof(cufftComplex) * _fftSize, 
 			cudaMemcpyDeviceToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
-	rc = cudaMemcpyAsync(irFFT.left, _irBuffers[_widx]+_fftSize, sizeof(cufftComplex) * _fftSize, 
+	
+	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			irFFT.left, irFFT.left, ir.left, _fftSize, _interpolationSteps, _wet);
+	
+
+	rc = cudaMemcpyAsync(ir.right, _irBuffers[_widx]+_fftSize, sizeof(cufftComplex) * _fftSize, 
 			cudaMemcpyDeviceToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
+
+	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			irFFT.right, irFFT.right, ir.right, _fftSize, _interpolationSteps, _wet);
+	
+	if (_interpolationSteps > 1) _interpolationSteps--;
 #endif
 
 	// copy input to device

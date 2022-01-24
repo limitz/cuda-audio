@@ -59,6 +59,7 @@ private:
 	float _wet = 1.0;
 	float _dry = 0.0;
 
+	size_t _interpolationSteps = 1000;
 	double _runtime = 0;
 	int _nruns = -10;
 	size_t _delay = 1600;
