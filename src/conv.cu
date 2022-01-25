@@ -58,18 +58,26 @@ __global__ static void f_pointwiseAdd(cufftComplex* r, const cufftComplex* a, co
 	}
 }
 
-__global__ static void f_pointwiseMultiplyAndScale(cufftComplex* r, const cufftComplex* ir, const cufftComplex* a, size_t n, float scale)
+__global__ static void f_pointwiseMultiplyAndScale(
+		cufftComplex* r, 
+		const cufftComplex* ir1, const cufftComplex* ir2, 
+		const cufftComplex* a1, const cufftComplex* a2, 
+		size_t n, float scale1, float scale2)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
 	for (auto s = offset.x; s < n; s += stride.x)
 	{
-		auto va = a[s];
-		auto vb = ir[s];
-		auto re = va.x * vb.x - va.y * vb.y;
-		auto im = (va.x + va.y) * (vb.x + vb.y) - re;
-		r[s] = make_float2(re, im) * scale;
+		auto va1 = a1[s];
+		auto va2 = a2[s];
+		auto vir1 = ir1[s];
+		auto vir2 = ir2[s];
+		auto re1 = va1.x * vir1.x - va1.y * vir1.y;
+		auto re2 = va2.x * vir2.x - va2.y * vir2.y;
+		auto im1 = (va1.x + va1.y) * (vir1.x + vir1.y) - re1;
+		auto im2 = (va2.x + va2.y) * (vir2.x + vir2.y) - re2;
+		r[s] = make_float2(re1, im1) * scale1 + make_float2(re2,im2) * scale2;
 	}
 }
 
@@ -104,7 +112,8 @@ Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccS
 	cufftComplex** pcc[] = {
 		&cin, &cin1, &cin2, &cinFFT, 
 		&ir.left, &ir.right,
-		&irFFT.left, &irFFT.right,
+		&irFFT1.left, &irFFT1.right,
+		&irFFT2.left, &irFFT2.right,
 	};
 
 	for (auto i = 0UL; i < sizeof(pcc) / sizeof(*pcc); i++)
@@ -254,18 +263,32 @@ void Convolution::onProcess(size_t nframes)
 	cufftSetStream(_plan, _streams[0]);
 
 	// interpolate to IR FFT
+	// TODO remove this memcpy?
 	rc = cudaMemcpyAsync(ir.left, _irBuffers[cc1.value.select], sizeof(cufftComplex) * _fftSize, 
 			cudaMemcpyDeviceToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
 	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			irFFT.left, irFFT.left, ir.left, _fftSize, cc1.value.vsteps, cc1.value.wet);
+			irFFT1.left, irFFT1.left, ir.left, _fftSize, cc1.value.vsteps, cc1.value.wet);
 	rc = cudaMemcpyAsync(ir.right, _irBuffers[cc1.value.select]+_fftSize, sizeof(cufftComplex) * _fftSize, 
 			cudaMemcpyDeviceToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
 	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			irFFT.right, irFFT.right, ir.right, _fftSize, cc1.value.vsteps, cc1.value.wet);
+			irFFT1.right, irFFT1.right, ir.right, _fftSize, cc1.value.vsteps, cc1.value.wet);
 	if (cc1.value.vsteps > 0) cc1.value.vsteps--;
 
+	// TODO remove this memcpy?
+	rc = cudaMemcpyAsync(ir.left, _irBuffers[cc2.value.select], sizeof(cufftComplex) * _fftSize, 
+			cudaMemcpyDeviceToDevice, _streams[0]);
+	assert(cudaSuccess == rc);
+	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			irFFT2.left, irFFT2.left, ir.left, _fftSize, cc2.value.vsteps, cc2.value.wet);
+	rc = cudaMemcpyAsync(ir.right, _irBuffers[cc2.value.select]+_fftSize, sizeof(cufftComplex) * _fftSize, 
+			cudaMemcpyDeviceToDevice, _streams[0]);
+	assert(cudaSuccess == rc);
+	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			irFFT2.right, irFFT2.right, ir.right, _fftSize, cc2.value.vsteps, cc2.value.wet);
+	if (cc2.value.vsteps > 0) cc2.value.vsteps--;
+	
 	// copy input to device
 	rc = cudaMemcpy2DAsync(
 			cin,  sizeof(cufftComplex), 
@@ -290,14 +313,18 @@ void Convolution::onProcess(size_t nframes)
 			cin1, cin2, cinFFT, _fftSize);
 	
 	// multiply ir with input
-	float panL = cc1.value.panWet1 >= 0 ? 1 - cc1.value.panWet1 : 1;
-	float panR = cc1.value.panWet1 <= 0 ? 1 + cc1.value.panWet1 : 1;
+	float panL1 = cc1.value.panWet1 >= 0 ? 1 - cc1.value.panWet1 : 1;
+	float panR1 = cc1.value.panWet1 <= 0 ? 1 + cc1.value.panWet1 : 1;
+	float panL2 = cc2.value.panWet1 >= 0 ? 1 - cc2.value.panWet1 : 1;
+	float panR2 = cc2.value.panWet1 <= 0 ? 1 + cc1.value.panWet1 : 1;
 
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			output.left, irFFT.left, cin1, _fftSize, 1.0f/_fftSize * panL);
+			output.left, irFFT1.left, irFFT2.left, cin1, cin2, _fftSize, 
+			1.0f/_fftSize * panL1, 1.0f/_fftSize * panL2);
 	
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-		 	output.right, irFFT.right, cin1, _fftSize, 1.0f/_fftSize * panR);
+		 	output.right, irFFT1.right, irFFT2.right, cin1, cin2, _fftSize, 
+			1.0f/_fftSize * panR1, 1.0f/_fftSize * panR2);
 
 	auto tmp = ir;
 	// take the inverse FFT of the output

@@ -69,7 +69,7 @@ private:
 	struct
 	{
 		cufftComplex* left, *right;
-	} ir, irFFT, output, residual;
+	} ir, irFFT1, irFFT2, output, residual;
 
 	std::map<size_t, cufftComplex*> _irBuffers;
 
