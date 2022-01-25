@@ -13,20 +13,22 @@
 #define NUM_CONV_INSTANCES 1
 #endif
 
-int main()
+int main(int argc, char** argv)
 {
 	selectGpu();
 
-
+	size_t firstConvId = argc > 1 ? atol(argv[1]) : 1;
+	size_t numInstances = argc > 2 ? atol(argv[2]) : NUM_CONV_INSTANCES;
+ 
 	// Top row of my novation launchcontrol starts at 0x15
 	uint8_t ccMessage = 0xB0;
 	uint8_t ccStart = 0x15;
 
-	Convolution* instances[NUM_CONV_INSTANCES] = { nullptr };
-	for (auto i=0UL; i < NUM_CONV_INSTANCES; i++)
+	Convolution** instances = new Convolution*[numInstances];
+	for (auto i=0UL; i < numInstances; i++)
 	{
 		char* name = (char*)alloca(256);
-		sprintf(name, "cudaconv_%lu",i+1);
+		sprintf(name, "cudaconv_%lu",i + firstConvId);
 
 		// 2 input channels per instance
 		// There are 8 controls, let's assume simply that cc is contiguous
@@ -44,9 +46,9 @@ int main()
 
 		// TODO get connections from settings
 		// Connect inputs, assumed to be available
-		sprintf(name, "system:capture_%lu", i * 2 + 1);
+		sprintf(name, "system:capture_%lu", i * 0 + 1);
 		jack_connect(c->handle, name, jack_port_name(c->capture[0]));
-		sprintf(name, "system:capture_%lu", i * 2 + 2);
+		sprintf(name, "system:capture_%lu", i * 0 + 2);
 		jack_connect(c->handle, name, jack_port_name(c->capture[1]));
 		
 		// Connect to stereo output, assumed to be available
@@ -68,13 +70,14 @@ int main()
 
 	std::cin.get();
 
-	for (auto i=0UL; i < NUM_CONV_INSTANCES; i++)
+	for (auto i=0UL; i < numInstances; i++)
 	{
 		auto c = instances[i];
 		if (c->isRunning()) c->stop();
 		Log::info(c->name, "Average convolution runtime: %f", c->avgRuntime());
 		delete c;
 	}
+	delete[] instances;
 
 	return 0;
 }
