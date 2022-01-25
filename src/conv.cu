@@ -310,7 +310,7 @@ void Convolution::onProcess(size_t nframes)
 	float panL1 = cc1.value.panWet1 >= 0 ? 1 - cc1.value.panWet1 : 1;
 	float panR1 = cc1.value.panWet1 <= 0 ? 1 + cc1.value.panWet1 : 1;
 	float panL2 = cc2.value.panWet1 >= 0 ? 1 - cc2.value.panWet1 : 1;
-	float panR2 = cc2.value.panWet1 <= 0 ? 1 + cc1.value.panWet1 : 1;
+	float panR2 = cc2.value.panWet1 <= 0 ? 1 + cc2.value.panWet1 : 1;
 
 	cudaStreamSynchronize(_streams[2]);
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
@@ -342,7 +342,7 @@ void Convolution::onProcess(size_t nframes)
 	panL1 = cc1.value.panDry >= 0 ? 1 - cc1.value.panDry : 1;
 	panR1 = cc1.value.panDry <= 0 ? 1 + cc1.value.panDry : 1;
 	panL2 = cc2.value.panDry >= 0 ? 1 - cc2.value.panDry : 1;
-	panR2 = cc2.value.panDry <= 0 ? 1 + cc1.value.panDry : 1;
+	panR2 = cc2.value.panDry <= 0 ? 1 + cc2.value.panDry : 1;
 	f_addDryInterleaved <<< 1, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			output.left, output.right, cin, nframes, 
 			cc1.value.dry * panL1 * cc1.value.level, 

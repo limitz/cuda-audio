@@ -10,7 +10,7 @@
 #include "conv.h"
 
 #ifndef NUM_CONV_INSTANCES
-#define NUM_CONV_INSTANCES 1 
+#define NUM_CONV_INSTANCES 1
 #endif
 
 int main()
@@ -28,9 +28,10 @@ int main()
 		char* name = (char*)alloca(256);
 		sprintf(name, "cudaconv_%lu",i+1);
 
+		// 2 input channels per instance
 		// There are 8 controls, let's assume simply that cc is contiguous
 		// Other mappings would require changing Convolution::cc member
-		auto c = instances[i] = new Convolution(name, ccMessage + i, ccStart);
+		auto c = instances[i] = new Convolution(name, ccMessage + i * 2, ccStart);
 	
 		std::ifstream is("index.txt");
 		std::string path;
@@ -43,8 +44,10 @@ int main()
 
 		// TODO get connections from settings
 		// Connect inputs, assumed to be available
-		jack_connect(c->handle, "system:capture_1", jack_port_name(c->capture[0]));
-		jack_connect(c->handle, "system:capture_2", jack_port_name(c->capture[1]));
+		sprintf(name, "system:capture_%lu", i * 2 + 3);
+		jack_connect(c->handle, name, jack_port_name(c->capture[0]));
+		sprintf(name, "system:capture_%lu", i * 2 + 4);
+		jack_connect(c->handle, name, jack_port_name(c->capture[1]));
 		
 		// Connect to stereo output, assumed to be available
 		jack_connect(c->handle, jack_port_name(c->playback[0]),  "system:playback_1");
