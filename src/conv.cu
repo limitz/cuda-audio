@@ -1,7 +1,7 @@
 #include "conv.h"
 
 __global__ static void f_interpolate(
-		cufftComplex* dst, cufftComplex* a, cufftComplex* b, 
+		cufftComplex* dst, const cufftComplex* a, const cufftComplex* b, 
 		size_t fftSize, size_t steps, float wet)
 {
 	auto stride = gridDim * blockDim;
@@ -20,7 +20,7 @@ __global__ static void f_interpolate(
 __device__ inline cufftComplex conjugate(cufftComplex v) { return { v.x, -v.y }; }
 __device__ inline cufftComplex timesj(cufftComplex v) { return { -v.y, v.x }; }
 
-__global__ static void f_unpackC22R(cufftComplex* L, cufftComplex* R, cufftComplex* src, size_t fftSize)
+__global__ static void f_unpackC22R(cufftComplex* L, cufftComplex* R, const cufftComplex* src, size_t fftSize)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
@@ -73,6 +73,20 @@ __global__ static void f_pointwiseMultiplyAndScale(cufftComplex* r, const cufftC
 	}
 }
 
+
+__global__ static void f_addDry(cufftComplex* L, cufftComplex* R, const cufftComplex* original, size_t n, float scale)
+{
+	auto stride = gridDim * blockDim;
+	auto offset = blockDim * blockIdx + threadIdx;
+
+	for (auto s = offset.x; s < n; s += stride.x)
+	{
+		auto v = original[s] * scale;
+		L[s] += v;
+		R[s] += v;
+	}
+}
+
 Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccStart, size_t fftSize) : 
 	JackClient(name),
 	_fftSize(fftSize),
@@ -87,7 +101,6 @@ Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccS
 		rc = cudaStreamCreateWithFlags(&_streams[i], cudaStreamNonBlocking);
 		assert(0 == rc);
 	}
-
 
 	cufftComplex** pcc[] = {
 		&cin, &cinFFT, 
@@ -261,8 +274,11 @@ void Convolution::onProcess(size_t nframes)
 	assert(cudaSuccess == rc);
 
 	// multiply ir with input
-	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.left, irFFT.left, cinFFT, _fftSize, 1.0f/_fftSize);
-	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.right, irFFT.right, cinFFT, _fftSize, 1.0f/_fftSize);
+	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			output.left, irFFT.left, cinFFT, _fftSize, 1.0f/_fftSize);
+	
+	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+		 output.right, irFFT.right, cinFFT, _fftSize, 1.0f/_fftSize);
 
 	auto tmp = ir;
 	// take the inverse FFT of the output
@@ -272,13 +288,22 @@ void Convolution::onProcess(size_t nframes)
 	assert(cudaSuccess == rc);
 		
 	// Add the residual
-	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.left, residual.left, tmp.left, _fftSize, (size_t)(_predelay * _maxPredelay));
-	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (output.right, residual.right, tmp.right, _fftSize, (size_t)(_predelay * _maxPredelay));
+	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			output.left, residual.left, tmp.left, _fftSize, (size_t)(_predelay * _maxPredelay));
 	
+	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			output.right, residual.right, tmp.right, _fftSize, (size_t)(_predelay * _maxPredelay));
+
+	// Add dry signal
+	f_addDry <<< 1, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			output.left, output.right, cin, nframes, _dry);
+
+
 	// Copy output to host
 	rc = cudaMemcpy2DAsync(L, sizeof(float), output.left, sizeof(cufftComplex),
 			sizeof(float), nframes, cudaMemcpyDeviceToHost, _streams[0]);
 	assert(cudaSuccess == rc);
+
 	rc = cudaMemcpy2DAsync(R, sizeof(float), output.right, sizeof(cufftComplex),
 			sizeof(float), nframes, cudaMemcpyDeviceToHost, _streams[0]);
 	assert(cudaSuccess == rc);
