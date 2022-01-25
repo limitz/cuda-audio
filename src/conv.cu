@@ -82,16 +82,19 @@ __global__ static void f_pointwiseMultiplyAndScale(
 }
 
 
-__global__ static void f_addDry(cufftComplex* L, cufftComplex* R, const cufftComplex* original, size_t n, float scale)
+__global__ static void f_addDryInterleaved(
+		cufftComplex* L, cufftComplex* R, 
+		const cufftComplex* original, size_t n, 
+		float scaleL1, float scaleR1, float scaleL2, float scaleR2)
 {
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
 	for (auto s = offset.x; s < n; s += stride.x)
 	{
-		auto v = original[s] * scale;
-		L[s] += v;
-		R[s] += v;
+		auto v = original[s];
+		L[s] += v.x * scaleL1 + v.y * scaleL2;
+		R[s] += v.x * scaleR1 + v.y * scaleR2;
 	}
 }
 
@@ -262,48 +265,39 @@ void Convolution::onProcess(size_t nframes)
 	cudaEventRecord(started, _streams[0]);
 	cufftSetStream(_plan, _streams[0]);
 
-	// interpolate to IR FFT
-	// TODO remove this memcpy?
-	rc = cudaMemcpyAsync(ir.left, _irBuffers[cc1.value.select], sizeof(cufftComplex) * _fftSize, 
-			cudaMemcpyDeviceToDevice, _streams[0]);
-	assert(cudaSuccess == rc);
-	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			irFFT1.left, irFFT1.left, ir.left, _fftSize, cc1.value.vsteps, cc1.value.wet);
-	rc = cudaMemcpyAsync(ir.right, _irBuffers[cc1.value.select]+_fftSize, sizeof(cufftComplex) * _fftSize, 
-			cudaMemcpyDeviceToDevice, _streams[0]);
-	assert(cudaSuccess == rc);
-	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			irFFT1.right, irFFT1.right, ir.right, _fftSize, cc1.value.vsteps, cc1.value.wet);
-	if (cc1.value.vsteps > 0) cc1.value.vsteps--;
-
-	// TODO remove this memcpy?
-	rc = cudaMemcpyAsync(ir.left, _irBuffers[cc2.value.select], sizeof(cufftComplex) * _fftSize, 
-			cudaMemcpyDeviceToDevice, _streams[0]);
-	assert(cudaSuccess == rc);
-	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			irFFT2.left, irFFT2.left, ir.left, _fftSize, cc2.value.vsteps, cc2.value.wet);
-	rc = cudaMemcpyAsync(ir.right, _irBuffers[cc2.value.select]+_fftSize, sizeof(cufftComplex) * _fftSize, 
-			cudaMemcpyDeviceToDevice, _streams[0]);
-	assert(cudaSuccess == rc);
-	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			irFFT2.right, irFFT2.right, ir.right, _fftSize, cc2.value.vsteps, cc2.value.wet);
-	if (cc2.value.vsteps > 0) cc2.value.vsteps--;
-	
 	// copy input to device
 	rc = cudaMemcpy2DAsync(
 			cin,  sizeof(cufftComplex), 
 			IN1,  sizeof(float), 
 			sizeof(float), nframes,
-			cudaMemcpyHostToDevice, _streams[0]);
+			cudaMemcpyHostToDevice, _streams[1]);
 	assert(cudaSuccess == rc);
 
-	
 	rc = cudaMemcpy2DAsync(
 			((float*)cin)+1,  sizeof(cufftComplex), 
-			IN1,  sizeof(float), 
+			IN2,  sizeof(float), 
 			sizeof(float), nframes,
-			cudaMemcpyHostToDevice, _streams[0]);
+			cudaMemcpyHostToDevice, _streams[1]);
 	assert(cudaSuccess == rc);
+	
+	// interpolate to IR FFT
+	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[2] >>> (
+			irFFT1.left, irFFT1.left, _irBuffers[cc1.value.select], 
+			_fftSize, cc1.value.vsteps, cc1.value.wet);
+	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[3] >>> (
+			irFFT1.right, irFFT1.right, _irBuffers[cc1.value.select]+_fftSize, 
+			_fftSize, cc1.value.vsteps, cc1.value.wet);
+	if (cc1.value.vsteps > 0) cc1.value.vsteps--;
+
+	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[2] >>> (
+			irFFT2.left, irFFT2.left, _irBuffers[cc2.value.select], 
+			_fftSize, cc2.value.vsteps, cc2.value.wet);
+	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[3] >>> (
+			irFFT2.right, irFFT2.right, _irBuffers[cc2.value.select]+_fftSize, 
+			_fftSize, cc2.value.vsteps, cc2.value.wet);
+	if (cc2.value.vsteps > 0) cc2.value.vsteps--;
+	
+	cudaStreamSynchronize(_streams[1]);
 	
 	// get FFT of input
 	rc = cufftExecC2C(_plan, cin, cinFFT, CUFFT_FORWARD);
@@ -318,10 +312,12 @@ void Convolution::onProcess(size_t nframes)
 	float panL2 = cc2.value.panWet1 >= 0 ? 1 - cc2.value.panWet1 : 1;
 	float panR2 = cc2.value.panWet1 <= 0 ? 1 + cc1.value.panWet1 : 1;
 
+	cudaStreamSynchronize(_streams[2]);
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			output.left, irFFT1.left, irFFT2.left, cin1, cin2, _fftSize, 
 			1.0f/_fftSize * panL1, 1.0f/_fftSize * panL2);
 	
+	cudaStreamSynchronize(_streams[3]);
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 		 	output.right, irFFT1.right, irFFT2.right, cin1, cin2, _fftSize, 
 			1.0f/_fftSize * panR1, 1.0f/_fftSize * panR2);
@@ -340,9 +336,15 @@ void Convolution::onProcess(size_t nframes)
 	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			output.right, residual.right, tmp.right, _fftSize, cc1.value.predelay);
 
-	// Add dry signal
-	f_addDry <<< 1, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			output.left, output.right, cin, nframes, cc1.value.dry);
+	// Add dry signal, cin still interleaved
+	panL1 = cc1.value.panDry >= 0 ? 1 - cc1.value.panDry : 1;
+	panR1 = cc1.value.panDry <= 0 ? 1 + cc1.value.panDry : 1;
+	panL2 = cc2.value.panDry >= 0 ? 1 - cc2.value.panDry : 1;
+	panR2 = cc2.value.panDry <= 0 ? 1 + cc1.value.panDry : 1;
+	f_addDryInterleaved <<< 1, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			output.left, output.right, cin, nframes, 
+			cc1.value.dry * panL1, cc1.value.dry * panR1,
+			cc2.value.dry * panL2, cc2.value.dry * panR2);
 
 
 	// Copy output to host
