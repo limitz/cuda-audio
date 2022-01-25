@@ -1,0 +1,30 @@
+#type       name      fftSize   max_pd   index    
+CONVOLUTION conv_bd    131072     8192   index.txt
+CONVOLUTION conv_sd    131072     8192   index.txt
+
+#midi   
+MIDIMAP  B0,15 = conv_bd:SELECT
+MIDIMAP  B0,16 = conv_bd:PREDELAY
+MIDIMAP  B0,17 = conv_bd:DRY
+MIDIMAP  B0,18 = conv_bd:WET
+MIDIMAP  B0,19 = conv_bd:SPEED
+
+MIDIMAP  B1,15 = conv_bd:SELECT
+MIDIMAP  B1,16 = conv_bd:PREDELAY
+MIDIMAP  B1,17 = conv_bd:DRY
+MIDIMAP  B1,18 = conv_bd:WET
+MIDIMAP  B1,19 = conv_bd:SPEED
+
+//ports
+CONNECT conv_bd:input    = system:capture_3
+CONNECT conv_bd:output_1 = system:playback_1
+CONNECT conv_bd:output_2 = system:playback_2
+CONNECT conv_bd:midi     = alsa_midi:Launch Control MIDI 1
+
+CONNECT conv_sd:input    = system:capture_4
+CONNECT conv_sd:input    = system:capture_5
+CONNECT conv_sd.output_1 = system.playback_1
+CONNECT conv_sd.output_2 = system.playback_2
+CONNECT conv_sd.midi     = alsa_midi:Launch Control MIDI 1
+
+

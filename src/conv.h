@@ -55,7 +55,7 @@ private:
 	std::map<size_t, cufftComplex*> _irBuffers;
 
 	size_t _widx = 0; // index of IR wav file
-	size_t _maxPredelay = 4096;
+	size_t _maxPredelay = 8192;
 	float _predelay = 0.0f;
 	float _wet = 0.5f;
 	float _dry = 0.0f;

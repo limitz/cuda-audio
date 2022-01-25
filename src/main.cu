@@ -18,12 +18,42 @@
 #endif
 
 const wchar_t* logolines[] = {
-	L"██     ██ ██ ██████  ██   ██  █████  ████████      ██████ ██    ██ ██████   █████   ██████  ██████  ███    ██ ██    ██ ",
-	L"██     ██ ██ ██   ██ ██  ██  ██   ██    ██        ██      ██    ██ ██   ██ ██   ██ ██      ██    ██ ████   ██ ██    ██ ",
-	L"██  █  ██ ██ ██████  █████   ███████    ██        ██      ██    ██ ██   ██ ███████ ██      ██    ██ ██ ██  ██ ██    ██ ",
-	L"██ ███ ██ ██ ██      ██  ██  ██   ██    ██        ██      ██    ██ ██   ██ ██   ██ ██      ██    ██ ██  ██ ██  ██  ██  ",
-	L" ███ ███  ██ ██      ██   ██ ██   ██    ██         ██████  ██████  ██████  ██   ██  ██████  ██████  ██   ████   ████   ",
+//123456789 123456789 123456789 123456789 123456789 123456789 123456789 123456789 |
+L"       ██████ ██    ██ ██████   █████    ██████  ██████  ███    ██ ██    ██     ",
+L"      ██      ██    ██ ██   ██ ██   ██  ██      ██    ██ ████   ██ ██    ██     ",
+L"      ██      ██    ██ ██   ██ ███████  ██      ██    ██ ██ ██  ██ ██    ██     ",
+L"      ██      ██    ██ ██   ██ ██   ██  ██      ██    ██ ██  ██ ██  ██  ██      ",
+L"       ██████  ██████  ██████  ██   ██   ██████  ██████  ██   ████   ████       ",
+L"       W  I  P  K  A  T                https://github.com/limitz/cudaconv       ",
+L"                                                                                ",
+L"  1   2   3   4   5   6   7   8   < IMPULSE RESPONSE >                    OUT   ",
+L"+---+---+---+---+---+---+---+---+--------------------------------------+-------+",
+L"|   |   |   |   |   |   |   |   |                                    |         |",
+L"|   |   |   |   |   |   |   |   |   B015 > 1.Glass Bottle Hall       |         |",
+L"|   |   |   |   |   |   |   |   |                                    |         |",
+L"|   |   |   |   |   |   |   |   |   B017 > DRY: [##########] 100     |         |",
+L"|   |   |   |   |   |   |   |   |   B018 > WET: [###       ]  30     |         |",
+L"|   |   |   |   |   |   |   |   |   B016 > PRE: [#######   ]  70     |         |",
+L"|   |   |   |   |   |   |   |   |                                    |         |",
+L"+----+----+----+----+----+----+----+----+------------------------------+-------+",
+L"|  06:41  | CUDACONV started...                                                |",
+L"|  06:42  |                                                                    |",
+L"|         |                                                                    |",
+L"|         |                                                                    |",
+L"|         |                                                                    |",
+L"|         |                                                                    |",
+L"+---------+--------------------------------------------------------------------+",
+L"  Q: Quit   F<n>: Select C<n>", 
 };
+
+void drawSingleMeter(int n, float v)
+{
+	for (int i=0; i<7; i++)
+	{
+		attron(COLOR_PAIR(30 + i));
+		mvaddwstr(16-i, n * 4 + 1, v >= i / 6.0f ? L"=== " : L"    ");
+	}
+}
 
 int display(JackClient* c)
 {
@@ -33,16 +63,18 @@ int display(JackClient* c)
 	{
 		endwin();
 		Log::error(__func__, "Terminal does not have colors");
-		return 1;
+		std::cin.get();
+		return 0;
 	}
 	if (!can_change_color())
 	{
 		endwin();
 		Log::error(__func__, "Unable to change colors, probably need to `export TERM=xterm-256color`");
-		return 2;
+		std::cin.get();
+		return 0;
 	}
-	start_color();
 
+	start_color();
 	init_color(1, 800, 100, 400);
 	init_color(2, 800, 100, 500);
 	init_color(3, 800, 100, 600);
@@ -51,10 +83,14 @@ int display(JackClient* c)
 	init_color(6, 600, 300, 100);
 	init_color(7, 700, 200, 100);
 	init_color(8, 800, 100, 100);
-	init_color(9, 500, 500, 500);
+	init_color(9, 900, 900, 200);
 	init_color(10, 100, 100, 100);
-	init_color(11, 150, 150, 150);
-
+	init_color(11, 500, 500, 500);
+	init_color(12, 300, 1000,   0);
+	init_color(13, 600,  900,   0);
+	init_color(14, 800,  800,   0);
+	init_color(15,1000,  600,   0);
+	init_color(16,1000,    0, 200);
 	init_pair(1, 1, 0);
 	init_pair(2, 2, 0);
 	init_pair(3, 3, 0);
@@ -66,6 +102,15 @@ int display(JackClient* c)
 	init_pair(9, 9, 8);
 	init_pair(10, 9, 10);
 	init_pair(11, 9, 11);
+	init_pair(20, 9, 0);
+	init_pair(21, 11, 0);
+	init_pair(30, 12, 0);
+	init_pair(31, 12, 0);
+	init_pair(32, 12, 0);
+	init_pair(33, 13, 0);
+	init_pair(34, 14, 0);
+	init_pair(35, 15, 0);
+	init_pair(36, 16, 0);
 
 	cbreak();
 	keypad(stdscr, TRUE);
@@ -78,20 +123,23 @@ int display(JackClient* c)
 	for (int l = 0; l < 5; l++)
 	{
 		attron(COLOR_PAIR(1 + l));
-		mvaddwstr(1+l, 1, logolines[l]);
+		mvaddwstr(1+l, 0, logolines[l]);
+	}
+	for (int l = 5; l < 7; l++)
+	{
+		attron(COLOR_PAIR(20));
+		mvaddwstr(1+l, 0, logolines[l]); 
 	}
 
-	auto midiports = jack_get_ports(c->handle, NULL, JACK_DEFAULT_AUDIO_TYPE, 0);
-	for (auto midiport = midiports; *midiport; midiport++)
+	for (int l = 7; l < sizeof(logolines) / sizeof(*logolines); l++)
 	{
-		char* client = (char*)alloca(strlen(*midiport) + 1);
-		strcpy(client, *midiport);
-		char* port = strchr(client, ':');
-		*port = 0;
-		port++;
-		
-		attron(COLOR_PAIR(10 + (i & 1)));
-		mvprintw(10+ ++i, 10, "%-12s | %-24s", client, port);
+		attron(COLOR_PAIR(21));
+		mvaddwstr(1+l, 0, logolines[l]);
+	}
+	
+	for (int i=0; i<8; i++)
+	{
+		drawSingleMeter(i, 1.0f);
 	}
 	refresh();
 
@@ -124,7 +172,7 @@ int main()
 		char* name = (char*)alloca(256);
 		sprintf(name, "cudaconv_%lu",i+1);
 
-		// There are 4 controls, let's assume simply that cc is contiguous
+		// There are 5 controls, let's assume simply that cc is contiguous
 		// Other mappings would require changing Convolution::cc member
 		auto c = instances[i] = new Convolution(name, ccMessage + i, ccStart);
 	
