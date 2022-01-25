@@ -64,7 +64,7 @@ public:
 private:
 	cufftHandle _plan;
 	cufftComplex* cinFFT;
-	cufftComplex* cin;
+	cufftComplex *cin, *cin1, *cin2;
 
 	struct
 	{

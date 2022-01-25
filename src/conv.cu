@@ -102,7 +102,7 @@ Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccS
 	}
 
 	cufftComplex** pcc[] = {
-		&cin, &cinFFT, 
+		&cin, &cin1, &cin2, &cinFFT, 
 		&ir.left, &ir.right,
 		&irFFT.left, &irFFT.right,
 	};
@@ -273,17 +273,31 @@ void Convolution::onProcess(size_t nframes)
 			sizeof(float), nframes,
 			cudaMemcpyHostToDevice, _streams[0]);
 	assert(cudaSuccess == rc);
+
+	
+	rc = cudaMemcpy2DAsync(
+			((float*)cin)+1,  sizeof(cufftComplex), 
+			IN1,  sizeof(float), 
+			sizeof(float), nframes,
+			cudaMemcpyHostToDevice, _streams[0]);
+	assert(cudaSuccess == rc);
 	
 	// get FFT of input
 	rc = cufftExecC2C(_plan, cin, cinFFT, CUFFT_FORWARD);
 	assert(cudaSuccess == rc);
-
+	
+	f_unpackC22R <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			cin1, cin2, cinFFT, _fftSize);
+	
 	// multiply ir with input
+	float panL = cc1.value.panWet1 >= 0 ? 1 - cc1.value.panWet1 : 1;
+	float panR = cc1.value.panWet1 <= 0 ? 1 + cc1.value.panWet1 : 1;
+
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			output.left, irFFT.left, cinFFT, _fftSize, 1.0f/_fftSize);
+			output.left, irFFT.left, cin1, _fftSize, 1.0f/_fftSize * panL);
 	
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-		 output.right, irFFT.right, cinFFT, _fftSize, 1.0f/_fftSize);
+		 	output.right, irFFT.right, cin1, _fftSize, 1.0f/_fftSize * panR);
 
 	auto tmp = ir;
 	// take the inverse FFT of the output
