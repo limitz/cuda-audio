@@ -62,14 +62,14 @@ int display(JackClient* c)
 	if (!has_colors())
 	{
 		endwin();
-		Log::error(__func__, "Terminal does not have colors");
+		Log::warn(__func__, "Terminal does not have colors");
 		std::cin.get();
 		return 0;
 	}
 	if (!can_change_color())
 	{
 		endwin();
-		Log::error(__func__, "Unable to change colors, probably need to `export TERM=xterm-256color`");
+		Log::warn(__func__, "Unable to change colors, probably need to `export TERM=xterm-256color`");
 		std::cin.get();
 		return 0;
 	}
@@ -185,18 +185,14 @@ int main()
 		}
 		c->start();
 
-		// Auto connect to capture_<i+1>, there are nicer ways to do this but connecting ports
-		// is going to be dealt with later in different code.
-		#if 1
-		sprintf(name, "system:capture_%lu", i+1+NUM_SKIP_INPUTS);
-		jack_connect(c->handle, name, jack_port_name(c->input));
-		#else
-		jack_connect(c->handle, "system:capture_1", jack_port_name(c->input));
-		#endif
+		// TODO get connections from settings
+		// Connect inputs, assumed to be available
+		jack_connect(c->handle, "system:capture_1", jack_port_name(c->capture[0]));
+		jack_connect(c->handle, "system:capture_2", jack_port_name(c->capture[1]));
 		
 		// Connect to stereo output, assumed to be available
-		jack_connect(c->handle, jack_port_name(c->left),  "system:playback_1");
-		jack_connect(c->handle, jack_port_name(c->right), "system:playback_2");
+		jack_connect(c->handle, jack_port_name(c->playback[0]),  "system:playback_1");
+		jack_connect(c->handle, jack_port_name(c->playback[1]), "system:playback_2");
 
 		// Auto connect all MIDI ports
 		#if 1

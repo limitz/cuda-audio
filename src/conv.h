@@ -18,23 +18,42 @@
 #define CONV_BLOCKSIZE 256
 #endif
 
+#ifndef CONV_MAX_ISTEPS
+#define CONV_MAX_ISTEPS 512
+#endif
+
+#ifndef CONV_MAX_PREDELAY
+#define CONV_MAX_PREDELAY 8192
+#endif
+
 class Convolution : public JackClient
 {
 public:
 	struct CC
 	{
 		uint8_t message;
-		uint8_t select, predelay, dry, wet, isteps;
-	} cc;
+		uint8_t select, predelay, dry, wet, isteps, panDry, panWet1, panWet2;
+		struct
+		{
+			size_t select = 0;   // [0-size]
+			size_t predelay = 0; // [0-8192]
+			size_t isteps = 100; // [0-512]
+			size_t vsteps = 0;
+			float dry = 0.5f; // [0,1]
+			float wet = 0.5f; // [0,1]
+			float panDry  = 0.0f; // [-1,1]
+			float panWet1 = 0.0f; // [-1,1]
+			float panWet2 = 0.0f; // [-1,1]
+		} value;
+	} cc1, cc2;
 
 	Convolution(const std::string& name = "Conv", uint8_t ccMessage = 0xB0, uint8_t ccStart = 0x15, size_t fftSize = CONV_FFTSIZE);
 	
 	// TODO make destructor that destroys all buffers
 
 	JackPort midiIn;
-	JackPort input;
-	JackPort left;
-	JackPort right;
+	JackPort capture[2];
+	JackPort playback[2];
 
 	virtual void onProcess(size_t nframes) override;
 	virtual void onStart() override;
@@ -44,8 +63,8 @@ public:
 
 private:
 	cufftHandle _plan;
-	cufftComplex* cin;
 	cufftComplex* cinFFT;
+	cufftComplex* cin;
 
 	struct
 	{
@@ -54,14 +73,6 @@ private:
 
 	std::map<size_t, cufftComplex*> _irBuffers;
 
-	size_t _widx = 0; // index of IR wav file
-	size_t _maxPredelay = 8192;
-	float _predelay = 0.0f;
-	float _wet = 0.5f;
-	float _dry = 0.0f;
-
-	size_t _maxInterpolationSteps = 500;
-	size_t _interpolationSteps = 100;
 	double _runtime = 0;
 	int _nruns = -10;
 	size_t _delay = 1600;
