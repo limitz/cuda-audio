@@ -161,7 +161,7 @@ Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccS
 	cc1.isteps   = ccStart + 4;
 	cc1.panDry   = ccStart + 5;
 	cc1.panWet1  = ccStart + 6;
-	cc1.panWet2  = ccStart + 7;
+	cc1.level  = ccStart + 7;
 	
 	cc2.message  = ccMessage + 1;
 	cc2.select   = ccStart;
@@ -171,7 +171,7 @@ Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccS
 	cc2.isteps   = ccStart + 4;
 	cc2.panDry   = ccStart + 5;
 	cc2.panWet1  = ccStart + 6;
-	cc2.panWet2  = ccStart + 7;
+	cc2.level  = ccStart + 7;
 }
 
 void Convolution::onStart()
@@ -222,7 +222,7 @@ static void handleCC(Convolution::CC& cc, uint8_t m1, uint8_t m2, int v, size_t 
 		if (cc.wet == m2) cc.value.wet = v / 128.0f;
 		if (cc.panDry == m2) cc.value.panDry = v / 64.0f - 1;
 		if (cc.panWet1 == m2) cc.value.panWet1 = v / 64.0f - 1;
-		if (cc.panWet2 == m2) cc.value.panWet2 = v / 64.0f - 1;
+		if (cc.level == m2) cc.value.level = v / 128.0f;
 		if (cc.isteps == m2) 
 		{
 			cc.value.isteps = v * CONV_MAX_ISTEPS / 0x80;
@@ -315,12 +315,14 @@ void Convolution::onProcess(size_t nframes)
 	cudaStreamSynchronize(_streams[2]);
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			output.left, irFFT1.left, irFFT2.left, cin1, cin2, _fftSize, 
-			1.0f/_fftSize * panL1, 1.0f/_fftSize * panL2);
+			1.0f/_fftSize * panL1 * cc1.value.level, 
+			1.0f/_fftSize * panL2 * cc2.value.level);
 	
 	cudaStreamSynchronize(_streams[3]);
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 		 	output.right, irFFT1.right, irFFT2.right, cin1, cin2, _fftSize, 
-			1.0f/_fftSize * panR1, 1.0f/_fftSize * panR2);
+			1.0f/_fftSize * panR1 * cc1.value.level,
+			1.0f/_fftSize * panR2 * cc2.value.level);
 
 	auto tmp = ir;
 	// take the inverse FFT of the output
@@ -343,8 +345,10 @@ void Convolution::onProcess(size_t nframes)
 	panR2 = cc2.value.panDry <= 0 ? 1 + cc1.value.panDry : 1;
 	f_addDryInterleaved <<< 1, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			output.left, output.right, cin, nframes, 
-			cc1.value.dry * panL1, cc1.value.dry * panR1,
-			cc2.value.dry * panL2, cc2.value.dry * panR2);
+			cc1.value.dry * panL1 * cc1.value.level, 
+			cc1.value.dry * panR1 * cc1.value.level,
+			cc2.value.dry * panL2 * cc2.value.level, 
+			cc2.value.dry * panR2 * cc2.value.level);
 
 
 	// Copy output to host

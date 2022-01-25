@@ -32,7 +32,7 @@ public:
 	struct CC
 	{
 		uint8_t message;
-		uint8_t select, predelay, dry, wet, isteps, panDry, panWet1, panWet2;
+		uint8_t select, predelay, dry, wet, isteps, panDry, panWet1, level;
 		struct
 		{
 			size_t select = 0;   // [0-size]
@@ -43,7 +43,7 @@ public:
 			float wet = 0.5f; // [0,1]
 			float panDry  = 0.0f; // [-1,1]
 			float panWet1 = 0.0f; // [-1,1]
-			float panWet2 = 0.0f; // [-1,1]
+			float level = 1.0f; // [0,1]
 		} value;
 	} cc1, cc2;
 
