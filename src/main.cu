@@ -44,9 +44,9 @@ int main()
 
 		// TODO get connections from settings
 		// Connect inputs, assumed to be available
-		sprintf(name, "system:capture_%lu", i * 2 + 3);
+		sprintf(name, "system:capture_%lu", i * 2 + 1);
 		jack_connect(c->handle, name, jack_port_name(c->capture[0]));
-		sprintf(name, "system:capture_%lu", i * 2 + 4);
+		sprintf(name, "system:capture_%lu", i * 2 + 2);
 		jack_connect(c->handle, name, jack_port_name(c->capture[1]));
 		
 		// Connect to stereo output, assumed to be available

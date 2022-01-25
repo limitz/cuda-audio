@@ -4,7 +4,7 @@ PROC = $(shell uname -m)
 ARCH = $(PROC)-linux
 
 ifeq ($(PROC), x86_64)
-CFLAGS := -std=c++17 -O3 -fPIC -Wall -DNUM_CONV_INSTANCES=3
+CFLAGS := -std=c++17 -O3 -fPIC -Wall
 IFLAGS := -I/usr/local/cuda/include
 LFLAGS := -rpath='$$ORIGIN'
 LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack -lncursesw
