@@ -1,6 +1,9 @@
 # CUDA Audio Convolution Reverb
 Real-time convolution reverb using impulse response audio files. 
 
+use ./bin/program <index-name> <start-id> <num-instances>
+like: `./bin/program brutalism 1 2` will load 2 instances, 4 channels using the index file ./ir/brutalism.index
+
 ### Wave files
 This repo is using git-lfs for the storage of binary files(wav impulse responses). The following should automatically download the files during cloning.
 

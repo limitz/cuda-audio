@@ -216,7 +216,11 @@ static void handleCC(Convolution::CC& cc, uint8_t m1, uint8_t m2, int v, size_t 
 {
 	if (cc.message == m1)
 	{
-		if (cc.select == m2) cc.value.select = v * nb / 0x80, cc.value.vsteps = cc.value.isteps;
+		if (cc.select == m2) 
+		{
+			cc.value.select = v * nb / 0x80, cc.value.vsteps = cc.value.isteps;
+			Log::info("conv", "Selected IR %d", cc.value.select);
+		}
 		if (cc.predelay == m2) cc.value.predelay = v * CONV_MAX_PREDELAY / 0x80;
 		if (cc.dry == m2) cc.value.dry = v / 128.0f;
 		if (cc.wet == m2) cc.value.wet = v / 128.0f;

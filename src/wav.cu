@@ -14,6 +14,34 @@ __global__ static void f_wavConvert(float2* output, short2* input, size_t frames
 			v.y / (float)65536);
 	}
 }
+__global__ static void f_wavConvert24(float2* output, uint8_t* input, size_t frames)
+{
+	auto stride = gridDim * blockDim;
+	auto offset = blockDim * blockIdx + threadIdx;
+
+	for (int s = offset.x; s < frames; s += stride.x)
+	{
+		uint32_t a1 = input[s*6+0];
+		uint32_t b1 = input[s*6+1];
+		uint32_t c1 = input[s*6+2];
+		uint32_t v1 = (a1 << 8) | (b1 << 16) | (c1 << 24);
+
+		uint32_t a2 = input[s*6+3];
+		uint32_t b2 = input[s*6+4];
+		uint32_t c2 = input[s*6+5];
+		uint32_t v2 = (a2 << 8) | (b2 << 16) | (c2 << 24);
+
+		int32_t vv1 = (int32_t) v1;
+		int32_t vv2 = (int32_t) v2;
+		vv1 /= 256;
+		vv2 /= 256;
+		
+		output[s] = make_float2(
+			vv1 / (float)(16777216),
+			vv2 / (float)(16777216));
+	}
+
+}
 
 WavFile::WavFile(const std::string& path) : path(path)
 {
@@ -71,11 +99,18 @@ WavFile::WavFile(const std::string& path) : path(path)
 	rc = cudaMemcpy(devBuffer, hostBuffer, header.chunkSize, cudaMemcpyHostToDevice);
 	assert(cudaSuccess == rc);
 
-	assert(2 == fmt->numChannels);
-	assert(4 == fmt->blockAlign);
-	assert(16 == fmt->bitsPerSample);
-	f_wavConvert <<< 16, 256, 0, 0 >>> ( buffer, (short2*)devBuffer, numFrames);
-
+	if (6 == fmt->blockAlign && 24 == fmt->bitsPerSample)
+	{
+		assert(2 == fmt->numChannels);
+		f_wavConvert24 <<< 16, 256, 0, 0 >>> ( buffer, (uint8_t*)devBuffer, numFrames);
+	}
+	else
+	{
+		assert(2 == fmt->numChannels);
+		assert(4 == fmt->blockAlign);
+		assert(16 == fmt->bitsPerSample);
+		f_wavConvert <<< 16, 256, 0, 0 >>> ( buffer, (short2*)devBuffer, numFrames);
+	}
 	delete[] hostBuffer;
 	
 	cudaStreamSynchronize(0);

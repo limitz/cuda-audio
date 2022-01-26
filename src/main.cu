@@ -17,8 +17,9 @@ int main(int argc, char** argv)
 {
 	selectGpu();
 
-	size_t firstConvId = argc > 1 ? atol(argv[1]) : 1;
-	size_t numInstances = argc > 2 ? atol(argv[2]) : NUM_CONV_INSTANCES;
+	std::string index = argc > 1 ? argv[1] : "recreation";
+	size_t firstConvId = argc > 2 ? atol(argv[2]) : 1;
+	size_t numInstances = argc > 3 ? atol(argv[3]) : NUM_CONV_INSTANCES;
  
 	// Top row of my novation launchcontrol starts at 0x15
 	uint8_t ccMessage = 0xB0;
@@ -35,10 +36,11 @@ int main(int argc, char** argv)
 		// Other mappings would require changing Convolution::cc member
 		auto c = instances[i] = new Convolution(name, ccMessage + i * 2, ccStart);
 	
-		std::ifstream is("index.txt");
+		std::ifstream is(std::string("ir/") + index + std::string(".index"));
 		std::string path;
 		for (size_t idx = 0; std::getline(is, path); idx++)
 		{
+			Log::info(__func__, "Loading %s", path.c_str());
 			WavFile w(path);
 			c->prepare(idx, w);
 		}
