@@ -7,8 +7,16 @@ void Settings::open(const std::string& path)
 	while (!is.eof())
 	{
 		std::string key, value;
-		is >> key >> value;
+		is >> key;
 		if (!key.size()) break;
+		
+		if ('#' == key[0]) 
+		{
+			std::string comment;
+			std::getline(is, comment);
+			continue;
+		}
+		is >> value;
 		(*this)[key] = Setting { key, value };
 		Log::info("Settings", "%-24s " ESC(36;1) "%s", key.c_str(), value.c_str());
 	}
@@ -36,42 +44,97 @@ void Settings::save(const std::string& path)
 bool Settings::isTrue(const std::string& fmt, ...)
 {
 	SETTINGS_FORMAT_KEY(key, fmt);
-	return (*this)[key].isTrue();
+	try
+	{
+		return (*this)[key].isTrue();
+	}
+	catch (std::exception& e)
+	{
+		Log::error("Settings", "Error for key %s", key.c_str());
+		throw e;
+	}
 }
 
 bool Settings::isFalse(const std::string& fmt, ...)
 {
 	SETTINGS_FORMAT_KEY(key, fmt);
-	return (*this)[key].isFalse();
+	try
+	{
+		return (*this)[key].isFalse();
+	}
+	catch (std::exception& e)
+	{
+		Log::error("Settings", "Error for key %s", key.c_str());
+		throw e;
+	}
 }
 
 uint8_t Settings::u8(const std::string& fmt, ...)
 {
 	SETTINGS_FORMAT_KEY(key, fmt);
-
-	return (*this)[key].u8();
+	try
+	{
+		return (*this)[key].u8();
+	}
+	catch (std::exception& e)
+	{
+		Log::error("Settings", "Error for key %s", key.c_str());
+		throw e;
+	}
 }
 
 uint16_t Settings::u16(const std::string& fmt, ...)
 {
 	SETTINGS_FORMAT_KEY(key, fmt);
-	return (*this)[key].u16();
+	try
+	{
+		return (*this)[key].u16();
+	}
+	catch (std::exception& e)
+	{
+		Log::error("Settings", "Error for key %s", key.c_str());
+		throw e;
+	}
 }
 
 uint32_t Settings::u32(const std::string& fmt, ...)
 {
 	SETTINGS_FORMAT_KEY(key, fmt);
-	return (*this)[key].u32();
+	try
+	{
+		return (*this)[key].u32();
+	}
+	catch (std::exception& e)
+	{
+		Log::error("Settings", "Error for key %s", key.c_str());
+		throw e;
+	}
 }
 
 float Settings::f32(const std::string& fmt, ...)
 {
 	SETTINGS_FORMAT_KEY(key, fmt);
-	return (*this)[key].f32();
+	try
+	{
+		return (*this)[key].f32();
+	}
+	catch (std::exception& e)
+	{
+		Log::error("Settings", "Error for key %s", key.c_str());
+		throw e;
+	}
 }
 
 const std::string& Settings::str(const std::string& fmt, ...)
 {
 	SETTINGS_FORMAT_KEY(key, fmt);
-	return (*this)[key].str();
+	try
+	{
+		return (*this)[key].str();
+	}
+	catch (std::exception& e)
+	{
+		Log::error("Settings", "Error for key %s", key.c_str());
+		throw e;
+	}
 }

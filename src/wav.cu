@@ -73,17 +73,18 @@ WavFile::WavFile(const std::string& path) : path(path)
 	fmt_t* fmt = (fmt_t*) alloca(header.chunkSize);
 	is.read((char*)fmt, header.chunkSize);
 
+#if 0
 	Log::info("WAV", "Format: %d", fmt->audioFormat);
 	Log::newline("Num Channels: %d", fmt->numChannels);
 	Log::newline("Sample Rate: %d", fmt->sampleRate);
 	Log::newline("Byte Rate: %d", fmt->byteRate);
 	Log::newline("Block Align: %d", fmt->blockAlign);
 	Log::newline("Bits per Sample: %d", fmt->bitsPerSample);
+#endif
 
 	is.read((char*)&header, 8);
-	Log::info("WAV", "reading %d frames of audio (%0.2f s)", 
-			header.chunkSize / fmt->blockAlign, 
-			header.chunkSize / (float)fmt->byteRate);
+	Log::info("wav", ESC(32;1) "IR [%0.2f s] " ESC(0) ESC(32;2) "%s", 
+			header.chunkSize / (float)fmt->byteRate, path.c_str());
 	char* hostBuffer = new char[header.chunkSize];
 	is.read(hostBuffer, header.chunkSize);
 
@@ -114,6 +115,4 @@ WavFile::WavFile(const std::string& path) : path(path)
 	delete[] hostBuffer;
 	
 	cudaStreamSynchronize(0);
-
-	Log::info("WAV", "Ready. %d frames", numFrames);
 }

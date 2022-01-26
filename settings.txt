@@ -1,10 +1,25 @@
+# WIPKAT CUDACONV SETTINGS
+#-------------------------
+# There are 2 input channels and 2 output channels
+# Both channels have the same mapping set for their
+# MIDI controls, with the exception of the panDry / 
+# panWet controls. 
+
+# IF YOU CHANGE conv[x].index, don't forget to make sure
+# conv[x].value.select is in range. (Can be 0)
+
+# NUMBER OF CONVOLUTIONS
+# Must be a multiple of 2
 conv.count 2
 
+# CONVOLUTION LEFT
 conv[0].fftSize 	131072
 conv[0].maxPredelay	8192
-conv[0].index		./ir/brutalism.index
+conv[0].index		./ir/all.index
 conv[0].input		system:capture_1
 conv[0].output		system:playback_1
+
+# CONVOLUTION LEFT: MIDI MAPPING
 conv[0].cc.message	176
 conv[0].cc.select	21
 conv[0].cc.predelay	22
@@ -15,11 +30,24 @@ conv[0].cc.panDry	26
 conv[0].cc.panWet	26
 conv[0].cc.level	28
 
+# CONVOLUTION LEFT: INITIAL VALUES
+conv[0].value.select 	5
+conv[0].value.predelay 	1024
+conv[0].value.dry	0.5
+conv[0].value.wet	0.5
+conv[0].value.speed  	100
+conv[0].value.panDry 	-1
+conv[0].value.panWet 	-1
+conv[0].value.level  	1.0
+
+# CONVOLUTION RIGHT
 conv[1].fftSize		131072
 conv[1].maxPredelay 	8192
-conv[1].index		./ir/brutalism.index
+conv[1].index		./ir/all.index
 conv[1].input		system:capture_2
 conv[1].output		system:playback_2
+
+# CONVOLUTION RIGHT: MIDI MAPPING
 conv[1].cc.message	176
 conv[1].cc.select	21
 conv[1].cc.predelay	22
@@ -29,5 +57,15 @@ conv[1].cc.speed	25
 conv[1].cc.panDry	27
 conv[1].cc.panWet	27
 conv[1].cc.level	28
+
+# CONVOLUTION RIGHT: INITIAL VALUES
+conv[1].value.select 	5
+conv[1].value.predelay 	1024
+conv[1].value.dry	0.5
+conv[1].value.wet	0.5
+conv[1].value.speed  	100
+conv[1].value.panDry 	1
+conv[1].value.panWet 	1
+conv[1].value.level  	1.0
 
 

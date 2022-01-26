@@ -1,8 +1,13 @@
 #include "conv.h"
 
+#ifndef CONV_INTERPOLATE
+#define CONV_INTERPOLATE 1
+#endif
+
 __device__ inline cufftComplex conjugate(cufftComplex v) { return { v.x, -v.y }; }
 __device__ inline cufftComplex timesj(cufftComplex v) { return { -v.y, v.x }; }
 
+#if CONV_INTERPOLATE
 __global__ static void f_interpolate(
 		cufftComplex* dst, const cufftComplex* a, const cufftComplex* b, 
 		size_t fftSize, size_t steps, float wet)
@@ -19,6 +24,7 @@ __global__ static void f_interpolate(
 		dst[s] = vv;
 	}
 }
+#endif
 
 __global__ static void f_unpackC22R(cufftComplex* L, cufftComplex* R, const cufftComplex* src, size_t fftSize)
 {
@@ -283,7 +289,14 @@ void Convolution::onProcess(size_t nframes)
 			sizeof(float), nframes,
 			cudaMemcpyHostToDevice, _streams[1]);
 	assert(cudaSuccess == rc);
-	
+
+#if CONV_INTERPOLATE
+#define CONV_IRFFT1L irFFT1.left
+#define CONV_IRFFT1R irFFT1.right
+#define CONV_IRFFT2L irFFT2.left
+#define CONV_IRFFT2R irFFT2.right
+
+	// Nicer but one of the most time consuming parts
 	// interpolate to IR FFT
 	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[2] >>> (
 			irFFT1.left, irFFT1.left, _irBuffers[cc[0].value.select], 
@@ -300,7 +313,15 @@ void Convolution::onProcess(size_t nframes)
 			irFFT2.right, irFFT2.right, _irBuffers[cc[1].value.select]+_fftSize, 
 			_fftSize, cc[1].value.vsteps, cc[1].value.wet);
 	if (cc[1].value.vsteps > 0) cc[1].value.vsteps--;
-	
+#else
+#warning Beware. Changing IR during live play may cause some noise.
+#define CONV_IRFFT1L (_irBuffers[cc[0].value.select])
+#define CONV_IRFFT1R (_irBuffers[cc[0].value.select]+_fftSize)
+#define CONV_IRFFT2L (_irBuffers[cc[1].value.select])
+#define CONV_IRFFT2R (_irBuffers[cc[1].value.select]+_fftSize)
+
+#endif
+
 	cudaStreamSynchronize(_streams[1]);
 	
 	// get FFT of input
@@ -318,13 +339,13 @@ void Convolution::onProcess(size_t nframes)
 
 	cudaStreamSynchronize(_streams[2]);
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			output.left, irFFT1.left, irFFT2.left, cin1, cin2, _fftSize, 
+			output.left, CONV_IRFFT1L, CONV_IRFFT2L, cin1, cin2, _fftSize, 
 			1.0f/_fftSize * panL1 * cc[0].value.level, 
 			1.0f/_fftSize * panL2 * cc[1].value.level);
 	
 	cudaStreamSynchronize(_streams[3]);
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-		 	output.right, irFFT1.right, irFFT2.right, cin1, cin2, _fftSize, 
+		 	output.right, CONV_IRFFT1R, CONV_IRFFT2R, cin1, cin2, _fftSize, 
 			1.0f/_fftSize * panR1 * cc[0].value.level,
 			1.0f/_fftSize * panR2 * cc[1].value.level);
 

@@ -42,6 +42,14 @@ int main(int argc, char** argv)
 			c->cc[i].panDry    = settings.u8("conv[%d].cc.panDry", idx);
 			c->cc[i].panWet    = settings.u8("conv[%d].cc.panWet", idx);
 			c->cc[i].level     = settings.u8("conv[%d].cc.level", idx);
+			c->cc[i].value.select    = settings.u32("conv[%d].value.select", idx);
+			c->cc[i].value.predelay  = settings.u32("conv[%d].value.predelay", idx);
+			c->cc[i].value.dry       = settings.f32("conv[%d].value.dry", idx);
+			c->cc[i].value.wet       = settings.f32("conv[%d].value.wet", idx);
+			c->cc[i].value.speed     = settings.u32("conv[%d].value.speed", idx);
+			c->cc[i].value.panDry    = settings.f32("conv[%d].value.panDry", idx);
+			c->cc[i].value.panWet    = settings.f32("conv[%d].value.panWet", idx);
+			c->cc[i].value.level     = settings.f32("conv[%d].value.level", idx);
 	
 			auto index = settings.str("conv[%d].index", idx);
 
@@ -49,7 +57,6 @@ int main(int argc, char** argv)
 			std::string path;
 			for (size_t j = 0; std::getline(is, path); j++)
 			{
-				Log::info(__func__, "Loading %s", path.c_str());
 				WavFile w(path);
 				c->prepare(j, w);
 			}
