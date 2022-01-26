@@ -8,6 +8,7 @@
 #include "wav.h"
 #include "jackclient.h"
 #include "conv.h"
+#include "settings.h"
 
 #ifndef NUM_CONV_INSTANCES
 #define NUM_CONV_INSTANCES 1
@@ -17,45 +18,51 @@ int main(int argc, char** argv)
 {
 	selectGpu();
 
-	std::string index = argc > 1 ? argv[1] : "recreation";
-	size_t firstConvId = argc > 2 ? atol(argv[2]) : 1;
-	size_t numInstances = argc > 3 ? atol(argv[3]) : NUM_CONV_INSTANCES;
- 
-	// Top row of my novation launchcontrol starts at 0x15
-	uint8_t ccMessage = 0xB0;
-	uint8_t ccStart = 0x15;
+	Settings settings;
+	settings.open("settings.txt");
+
+	auto numInstances = settings.u32("conv.count");
+	assert(0 == (numInstances % 2) && "conv.count must be a multiple of 2");
+	numInstances /= 2;
 
 	Convolution** instances = new Convolution*[numInstances];
-	for (auto i=0UL; i < numInstances; i++)
+	for (auto n=0UL; n < numInstances; n++)
 	{
-		char* name = (char*)alloca(256);
-		sprintf(name, "cudaconv_%lu",i + firstConvId);
-
-		// 2 input channels per instance
-		// There are 8 controls, let's assume simply that cc is contiguous
-		// Other mappings would require changing Convolution::cc member
-		auto c = instances[i] = new Convolution(name, ccMessage + i * 2, ccStart);
-	
-		std::ifstream is(std::string("ir/") + index + std::string(".index"));
-		std::string path;
-		for (size_t idx = 0; std::getline(is, path); idx++)
+		auto name = std::string("cudaconv_") + char('0' + n + 1);
+		auto c = instances[n] = new Convolution(name);
+		for (int i=0; i < 2; i++)
 		{
-			Log::info(__func__, "Loading %s", path.c_str());
-			WavFile w(path);
-			c->prepare(idx, w);
+			int idx = n * 2 + i;
+			c->cc[i].message   = settings.u8("conv[%d].cc.message", idx);
+			c->cc[i].select    = settings.u8("conv[%d].cc.select", idx);
+			c->cc[i].predelay  = settings.u8("conv[%d].cc.predelay", idx);
+			c->cc[i].dry       = settings.u8("conv[%d].cc.dry", idx);
+			c->cc[i].wet       = settings.u8("conv[%d].cc.wet", idx);
+			c->cc[i].speed     = settings.u8("conv[%d].cc.speed", idx);
+			c->cc[i].panDry    = settings.u8("conv[%d].cc.panDry", idx);
+			c->cc[i].panWet    = settings.u8("conv[%d].cc.panWet", idx);
+			c->cc[i].level     = settings.u8("conv[%d].cc.level", idx);
+	
+			auto index = settings.str("conv[%d].index", idx);
+
+			std::ifstream is(index);
+			std::string path;
+			for (size_t j = 0; std::getline(is, path); j++)
+			{
+				Log::info(__func__, "Loading %s", path.c_str());
+				WavFile w(path);
+				c->prepare(j, w);
+			}
 		}
 		c->start();
-
-		// TODO get connections from settings
-		// Connect inputs, assumed to be available
-		sprintf(name, "system:capture_%lu", i * 0 + 1);
-		jack_connect(c->handle, name, jack_port_name(c->capture[0]));
-		sprintf(name, "system:capture_%lu", i * 0 + 2);
-		jack_connect(c->handle, name, jack_port_name(c->capture[1]));
-		
-		// Connect to stereo output, assumed to be available
-		jack_connect(c->handle, jack_port_name(c->playback[0]),  "system:playback_1");
-		jack_connect(c->handle, jack_port_name(c->playback[1]), "system:playback_2");
+		for (int i=0; i < 2; i++)
+		{
+			int idx = n * 2 + i;
+			auto inputPort = settings.str("conv[%d].input", idx);
+			auto outputPort = settings.str("conv[%d].output", idx);
+			jack_connect(c->handle, inputPort.c_str(), jack_port_name(c->capture[i]));
+			jack_connect(c->handle, jack_port_name(c->playback[i]), outputPort.c_str());
+		}
 
 		// Auto connect all MIDI ports
 		#if 1

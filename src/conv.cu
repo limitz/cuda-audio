@@ -153,25 +153,25 @@ Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccS
 			CUFFT_C2C, batchSize);
 	assert(0 == rc);
 
-	cc1.message  = ccMessage;
-	cc1.select   = ccStart;
-	cc1.predelay = ccStart + 1;
-	cc1.dry      = ccStart + 2;
-	cc1.wet      = ccStart + 3;
-	cc1.isteps   = ccStart + 4;
-	cc1.panDry   = ccStart + 5;
-	cc1.panWet1  = ccStart + 6;
-	cc1.level  = ccStart + 7;
+	cc[0].message  = ccMessage;
+	cc[0].select   = ccStart;
+	cc[0].predelay = ccStart + 1;
+	cc[0].dry      = ccStart + 2;
+	cc[0].wet      = ccStart + 3;
+	cc[0].speed   = ccStart + 4;
+	cc[0].panDry   = ccStart + 5;
+	cc[0].panWet  = ccStart + 6;
+	cc[0].level  = ccStart + 7;
 	
-	cc2.message  = ccMessage + 1;
-	cc2.select   = ccStart;
-	cc2.predelay = ccStart + 1;
-	cc2.dry      = ccStart + 2;
-	cc2.wet      = ccStart + 3;
-	cc2.isteps   = ccStart + 4;
-	cc2.panDry   = ccStart + 5;
-	cc2.panWet1  = ccStart + 6;
-	cc2.level  = ccStart + 7;
+	cc[1].message  = ccMessage + 1;
+	cc[1].select   = ccStart;
+	cc[1].predelay = ccStart + 1;
+	cc[1].dry      = ccStart + 2;
+	cc[1].wet      = ccStart + 3;
+	cc[1].speed   = ccStart + 4;
+	cc[1].panDry   = ccStart + 5;
+	cc[1].panWet  = ccStart + 6;
+	cc[1].level  = ccStart + 7;
 }
 
 void Convolution::onStart()
@@ -218,19 +218,19 @@ static void handleCC(Convolution::CC& cc, uint8_t m1, uint8_t m2, int v, size_t 
 	{
 		if (cc.select == m2) 
 		{
-			cc.value.select = v * nb / 0x80, cc.value.vsteps = cc.value.isteps;
+			cc.value.select = v * nb / 0x80, cc.value.vsteps = cc.value.speed;
 			Log::info("conv", "Selected IR %d", cc.value.select);
 		}
 		if (cc.predelay == m2) cc.value.predelay = v * CONV_MAX_PREDELAY / 0x80;
 		if (cc.dry == m2) cc.value.dry = v / 128.0f;
 		if (cc.wet == m2) cc.value.wet = v / 128.0f;
 		if (cc.panDry == m2) cc.value.panDry = v / 64.0f - 1;
-		if (cc.panWet1 == m2) cc.value.panWet1 = v / 64.0f - 1;
+		if (cc.panWet == m2) cc.value.panWet = v / 64.0f - 1;
 		if (cc.level == m2) cc.value.level = v / 128.0f;
-		if (cc.isteps == m2) 
+		if (cc.speed == m2) 
 		{
-			cc.value.isteps = v * CONV_MAX_ISTEPS / 0x80;
-			if (cc.value.vsteps > cc.value.isteps) cc.value.vsteps = cc.value.isteps;
+			cc.value.speed = v * CONV_MAX_SPEED / 0x80;
+			if (cc.value.vsteps > cc.value.speed) cc.value.vsteps = cc.value.speed;
 		}
 	}
 }
@@ -254,8 +254,8 @@ void Convolution::onProcess(size_t nframes)
 		rc = jack_midi_event_get(&evt, midi, i);
 		assert(0 == rc);
 		
-		handleCC(cc1, evt.buffer[0], evt.buffer[1], evt.buffer[2], _irBuffers.size());
-		handleCC(cc2, evt.buffer[0], evt.buffer[1], evt.buffer[2], _irBuffers.size());
+		handleCC(cc[0], evt.buffer[0], evt.buffer[1], evt.buffer[2], _irBuffers.size());
+		handleCC(cc[1], evt.buffer[0], evt.buffer[1], evt.buffer[2], _irBuffers.size());
 
 #if 0
 		for (auto c=0; c<evt.size; c++) std::cout << std::hex << (int)evt.buffer[c] << " ";
@@ -286,20 +286,20 @@ void Convolution::onProcess(size_t nframes)
 	
 	// interpolate to IR FFT
 	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[2] >>> (
-			irFFT1.left, irFFT1.left, _irBuffers[cc1.value.select], 
-			_fftSize, cc1.value.vsteps, cc1.value.wet);
+			irFFT1.left, irFFT1.left, _irBuffers[cc[0].value.select], 
+			_fftSize, cc[0].value.vsteps, cc[0].value.wet);
 	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[3] >>> (
-			irFFT1.right, irFFT1.right, _irBuffers[cc1.value.select]+_fftSize, 
-			_fftSize, cc1.value.vsteps, cc1.value.wet);
-	if (cc1.value.vsteps > 0) cc1.value.vsteps--;
+			irFFT1.right, irFFT1.right, _irBuffers[cc[0].value.select]+_fftSize, 
+			_fftSize, cc[0].value.vsteps, cc[0].value.wet);
+	if (cc[0].value.vsteps > 0) cc[0].value.vsteps--;
 
 	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[2] >>> (
-			irFFT2.left, irFFT2.left, _irBuffers[cc2.value.select], 
-			_fftSize, cc2.value.vsteps, cc2.value.wet);
+			irFFT2.left, irFFT2.left, _irBuffers[cc[1].value.select], 
+			_fftSize, cc[1].value.vsteps, cc[1].value.wet);
 	f_interpolate <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[3] >>> (
-			irFFT2.right, irFFT2.right, _irBuffers[cc2.value.select]+_fftSize, 
-			_fftSize, cc2.value.vsteps, cc2.value.wet);
-	if (cc2.value.vsteps > 0) cc2.value.vsteps--;
+			irFFT2.right, irFFT2.right, _irBuffers[cc[1].value.select]+_fftSize, 
+			_fftSize, cc[1].value.vsteps, cc[1].value.wet);
+	if (cc[1].value.vsteps > 0) cc[1].value.vsteps--;
 	
 	cudaStreamSynchronize(_streams[1]);
 	
@@ -311,22 +311,22 @@ void Convolution::onProcess(size_t nframes)
 			cin1, cin2, cinFFT, _fftSize);
 	
 	// multiply ir with input
-	float panL1 = cc1.value.panWet1 >= 0 ? 1 - cc1.value.panWet1 : 1;
-	float panR1 = cc1.value.panWet1 <= 0 ? 1 + cc1.value.panWet1 : 1;
-	float panL2 = cc2.value.panWet1 >= 0 ? 1 - cc2.value.panWet1 : 1;
-	float panR2 = cc2.value.panWet1 <= 0 ? 1 + cc2.value.panWet1 : 1;
+	float panL1 = cc[0].value.panWet >= 0 ? 1 - cc[0].value.panWet : 1;
+	float panR1 = cc[0].value.panWet <= 0 ? 1 + cc[0].value.panWet : 1;
+	float panL2 = cc[1].value.panWet >= 0 ? 1 - cc[1].value.panWet : 1;
+	float panR2 = cc[1].value.panWet <= 0 ? 1 + cc[1].value.panWet : 1;
 
 	cudaStreamSynchronize(_streams[2]);
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			output.left, irFFT1.left, irFFT2.left, cin1, cin2, _fftSize, 
-			1.0f/_fftSize * panL1 * cc1.value.level, 
-			1.0f/_fftSize * panL2 * cc2.value.level);
+			1.0f/_fftSize * panL1 * cc[0].value.level, 
+			1.0f/_fftSize * panL2 * cc[1].value.level);
 	
 	cudaStreamSynchronize(_streams[3]);
 	f_pointwiseMultiplyAndScale <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 		 	output.right, irFFT1.right, irFFT2.right, cin1, cin2, _fftSize, 
-			1.0f/_fftSize * panR1 * cc1.value.level,
-			1.0f/_fftSize * panR2 * cc2.value.level);
+			1.0f/_fftSize * panR1 * cc[0].value.level,
+			1.0f/_fftSize * panR2 * cc[1].value.level);
 
 	auto tmp = ir;
 	// take the inverse FFT of the output
@@ -337,22 +337,22 @@ void Convolution::onProcess(size_t nframes)
 		
 	// Add the residual
 	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			output.left, residual.left, tmp.left, _fftSize, cc1.value.predelay);
+			output.left, residual.left, tmp.left, _fftSize, cc[0].value.predelay);
 	
 	f_pointwiseAdd <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
-			output.right, residual.right, tmp.right, _fftSize, cc1.value.predelay);
+			output.right, residual.right, tmp.right, _fftSize, cc[0].value.predelay);
 
 	// Add dry signal, cin still interleaved
-	panL1 = cc1.value.panDry >= 0 ? 1 - cc1.value.panDry : 1;
-	panR1 = cc1.value.panDry <= 0 ? 1 + cc1.value.panDry : 1;
-	panL2 = cc2.value.panDry >= 0 ? 1 - cc2.value.panDry : 1;
-	panR2 = cc2.value.panDry <= 0 ? 1 + cc2.value.panDry : 1;
+	panL1 = cc[0].value.panDry >= 0 ? 1 - cc[0].value.panDry : 1;
+	panR1 = cc[0].value.panDry <= 0 ? 1 + cc[0].value.panDry : 1;
+	panL2 = cc[1].value.panDry >= 0 ? 1 - cc[1].value.panDry : 1;
+	panR2 = cc[1].value.panDry <= 0 ? 1 + cc[1].value.panDry : 1;
 	f_addDryInterleaved <<< 1, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			output.left, output.right, cin, nframes, 
-			cc1.value.dry * panL1 * cc1.value.level, 
-			cc1.value.dry * panR1 * cc1.value.level,
-			cc2.value.dry * panL2 * cc2.value.level, 
-			cc2.value.dry * panR2 * cc2.value.level);
+			cc[0].value.dry * panL1 * cc[0].value.level, 
+			cc[0].value.dry * panR1 * cc[0].value.level,
+			cc[1].value.dry * panL2 * cc[1].value.level, 
+			cc[1].value.dry * panR2 * cc[1].value.level);
 
 
 	// Copy output to host

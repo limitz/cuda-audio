@@ -18,8 +18,8 @@
 #define CONV_BLOCKSIZE 256
 #endif
 
-#ifndef CONV_MAX_ISTEPS
-#define CONV_MAX_ISTEPS 512
+#ifndef CONV_MAX_SPEED
+#define CONV_MAX_SPEED 512
 #endif
 
 #ifndef CONV_MAX_PREDELAY
@@ -32,20 +32,20 @@ public:
 	struct CC
 	{
 		uint8_t message;
-		uint8_t select, predelay, dry, wet, isteps, panDry, panWet1, level;
+		uint8_t select, predelay, dry, wet, speed, panDry, panWet, level;
 		struct
 		{
 			size_t select = 0;   // [0-size]
 			size_t predelay = 0; // [0-8192]
-			size_t isteps = 100; // [0-512]
+			size_t speed = 100; // [0-512]
 			size_t vsteps = 0;
 			float dry = 0.5f; // [0,1]
 			float wet = 0.5f; // [0,1]
 			float panDry  = 0.0f; // [-1,1]
-			float panWet1 = 0.0f; // [-1,1]
+			float panWet = 0.0f; // [-1,1]
 			float level = 1.0f; // [0,1]
 		} value;
-	} cc1, cc2;
+	} cc[2];
 
 	Convolution(const std::string& name = "Conv", uint8_t ccMessage = 0xB0, uint8_t ccStart = 0x15, size_t fftSize = CONV_FFTSIZE);
 	

@@ -1,30 +1,33 @@
-#type       name      fftSize   max_pd   index    
-CONVOLUTION conv_bd    131072     8192   index.txt
-CONVOLUTION conv_sd    131072     8192   index.txt
+conv.count 2
 
-#midi   
-MIDIMAP  B0,15 = conv_bd:SELECT
-MIDIMAP  B0,16 = conv_bd:PREDELAY
-MIDIMAP  B0,17 = conv_bd:DRY
-MIDIMAP  B0,18 = conv_bd:WET
-MIDIMAP  B0,19 = conv_bd:SPEED
+conv[0].fftSize 	131072
+conv[0].maxPredelay	8192
+conv[0].index		./ir/brutalism.index
+conv[0].input		system:capture_1
+conv[0].output		system:playback_1
+conv[0].cc.message	176
+conv[0].cc.select	21
+conv[0].cc.predelay	22
+conv[0].cc.dry		23
+conv[0].cc.wet		24
+conv[0].cc.speed	25
+conv[0].cc.panDry	26
+conv[0].cc.panWet	26
+conv[0].cc.level	28
 
-MIDIMAP  B1,15 = conv_bd:SELECT
-MIDIMAP  B1,16 = conv_bd:PREDELAY
-MIDIMAP  B1,17 = conv_bd:DRY
-MIDIMAP  B1,18 = conv_bd:WET
-MIDIMAP  B1,19 = conv_bd:SPEED
-
-//ports
-CONNECT conv_bd:input    = system:capture_3
-CONNECT conv_bd:output_1 = system:playback_1
-CONNECT conv_bd:output_2 = system:playback_2
-CONNECT conv_bd:midi     = alsa_midi:Launch Control MIDI 1
-
-CONNECT conv_sd:input    = system:capture_4
-CONNECT conv_sd:input    = system:capture_5
-CONNECT conv_sd.output_1 = system.playback_1
-CONNECT conv_sd.output_2 = system.playback_2
-CONNECT conv_sd.midi     = alsa_midi:Launch Control MIDI 1
+conv[1].fftSize		131072
+conv[1].maxPredelay 	8192
+conv[1].index		./ir/brutalism.index
+conv[1].input		system:capture_2
+conv[1].output		system:playback_2
+conv[1].cc.message	176
+conv[1].cc.select	21
+conv[1].cc.predelay	22
+conv[1].cc.dry		23
+conv[1].cc.wet		24
+conv[1].cc.speed	25
+conv[1].cc.panDry	27
+conv[1].cc.panWet	27
+conv[1].cc.level	28
 
 
