@@ -1,8 +1,6 @@
 # CUDA Audio Convolution Reverb
 Real-time convolution reverb using impulse response audio files. 
-
-use ./bin/program <index-name> <start-id> <num-instances>
-like: `./bin/program brutalism 1 2` will load 2 instances, 4 channels using the index file ./ir/brutalism.index
+See settings.txt for configuration
 
 ### Wave files
 This repo is using git-lfs for the storage of binary files(wav impulse responses). The following should automatically download the files during cloning.
@@ -34,7 +32,7 @@ After downloading the sources, use editConfig to go into the config menu and ena
 There are some convenience scripts in the jetson folder.
 floorit is a *MUST* before running the application.
 
-* jetson/floorit - enable maximum performance
-* jetson/chillout - disable maximum performance
-* jetson/ghostme - enable X/OpenGL applications without display attached
+* scripts/jfloorit - enable maximum performance
+* scripts/chillout - disable maximum performance
+* scripts/ghostme - enable X/OpenGL applications without display attached
 
