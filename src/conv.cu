@@ -4,6 +4,10 @@
 #define CONV_INTERPOLATE 1
 #endif
 
+#ifndef CONV_LOWPASS
+#define CONV_LOWPASS 1
+#endif
+
 __device__ inline cufftComplex conjugate(cufftComplex v) { return { v.x, -v.y }; }
 __device__ inline cufftComplex timesj(cufftComplex v) { return { -v.y, v.x }; }
 
@@ -15,13 +19,15 @@ __global__ static void f_interpolate(
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
-	for (int s = offset.x; s < fftSize; s += stride.x)
+	//auto ns = 1.0f / (steps + 5);
+	for (int s = offset.x; s < fftSize/2; s += stride.x)
 	{
 		auto va = a[s];
 		auto vb = b[s] * wet;
-		auto vd = (vb - va) / (steps + 5); // just add a little to wet changes
+		auto vd = (vb - va) / (steps + 5); //* ns;
 		auto vv = va + vd;
 		dst[s] = vv;
+		if (s) dst[fftSize - s] = conjugate(vv);
 	}
 }
 #endif
@@ -31,23 +37,40 @@ __global__ static void f_unpackC22R(cufftComplex* L, cufftComplex* R, const cuff
 	auto stride = gridDim * blockDim;
 	auto offset = blockDim * blockIdx + threadIdx;
 
-	assert(1 == __popcll(fftSize));
-	auto m = fftSize - 1;
+	//assert(1 == __popcll(fftSize));
+	//auto m = fftSize - 1;
 
 	for (auto s = offset.x; s < fftSize/2; s += stride.x)
 	{
 		auto idxa = s;
-		auto idxb = (fftSize - s) & m;
+		auto idxb = (fftSize - s);
 
 		auto va = src[idxa];
-		auto vb = conjugate(src[idxb]);
+		auto vb = s ? conjugate(src[idxb]) : va;
 		auto la = 0.5f * (va + vb);
 		auto lb = timesj(-0.5f * (va - vb));
 
 		L[idxa] = la;
 		R[idxa] = lb;
-		L[idxb] = conjugate(la);
-		R[idxb] = conjugate(lb);
+		if (s)
+		{
+			L[idxb] = conjugate(la);
+			R[idxb] = conjugate(lb);
+		}
+	}
+}
+
+
+__global__ static void f_lowpass(cufftComplex* r, const cufftComplex* a, size_t fftSize)
+{
+	auto stride = gridDim * blockDim;
+	auto offset = blockDim * blockIdx + threadIdx;
+
+	for (auto s = offset.x; s < fftSize/2; s += stride.x)
+	{
+		auto va = a[s] * cbrt(0.54 - 0.46 * cospif((2.0f * s) / fftSize));
+		r[s] = va;
+		if (s) r[fftSize - s] = conjugate(va);
 	}
 }
 
@@ -330,7 +353,17 @@ void Convolution::onProcess(size_t nframes)
 	
 	f_unpackC22R <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			cin1, cin2, cinFFT, _fftSize);
-	
+
+#if CONV_LOWPASS
+	f_lowpass <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			CONV_IRFFT1L, CONV_IRFFT1L, _fftSize);
+	f_lowpass <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			CONV_IRFFT1R, CONV_IRFFT1R, _fftSize);
+	f_lowpass <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			CONV_IRFFT2L, CONV_IRFFT2L, _fftSize);
+	f_lowpass <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
+			CONV_IRFFT2R, CONV_IRFFT2R, _fftSize);
+#endif
 	// multiply ir with input
 	float panL1 = cc[0].value.panWet >= 0 ? 1 - cc[0].value.panWet : 1;
 	float panR1 = cc[0].value.panWet <= 0 ? 1 + cc[0].value.panWet : 1;
