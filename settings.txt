@@ -36,8 +36,8 @@ conv[0].value.predelay 	1024
 conv[0].value.dry	0.5
 conv[0].value.wet	0.5
 conv[0].value.speed  	100
-conv[0].value.panDry 	-1
-conv[0].value.panWet 	-1
+conv[0].value.panDry 	0
+conv[0].value.panWet 	0
 conv[0].value.level  	1.0
 
 # CONVOLUTION RIGHT
@@ -64,8 +64,8 @@ conv[1].value.predelay 	1024
 conv[1].value.dry	0.5
 conv[1].value.wet	0.5
 conv[1].value.speed  	100
-conv[1].value.panDry 	1
-conv[1].value.panWet 	1
+conv[1].value.panDry 	0
+conv[1].value.panWet 	0
 conv[1].value.level  	1.0
 
 

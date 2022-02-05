@@ -72,7 +72,7 @@ int main(int argc, char** argv)
 		}
 
 		// Auto connect all MIDI ports
-		#if 1
+		#if 0
 		auto midiports = jack_get_ports(c->handle, NULL, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput);
 		for (auto midiport = midiports; *midiport; midiport++)
 		{
@@ -81,7 +81,6 @@ int main(int argc, char** argv)
 		}
 		jack_free(midiports);
 		#endif
-
 	}
 
 	std::cin.get();

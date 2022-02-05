@@ -272,10 +272,14 @@ void Convolution::onProcess(size_t nframes)
 	auto IN2 = capture[1] ? jack_port_get_buffer(capture[1], nframes) : nullptr;
 	auto L = playback[0] ? jack_port_get_buffer(playback[0], nframes) : nullptr;
 	auto R = playback[1] ? jack_port_get_buffer(playback[1], nframes) : nullptr;
+
+
+#if 0
 	auto midi = midiIn ? jack_port_get_buffer(midiIn, nframes) : nullptr;
-
-	if (!IN1 || !IN2 || !L || !R || !midi) return;
-
+	if (!midi) return;
+#endif
+	if (!IN1 || !IN2 || !L || !R) return;
+#if 0
 	auto nevts = jack_midi_get_event_count(midi);
 	for (auto i=0UL;i<nevts; i++)
 	{
@@ -291,7 +295,7 @@ void Convolution::onProcess(size_t nframes)
 		std::cout << std::endl;
 #endif
 	}
-	
+#endif
 	cudaEvent_t started, stopped;
 	cudaEventCreate(&started);
 	cudaEventCreate(&stopped);
