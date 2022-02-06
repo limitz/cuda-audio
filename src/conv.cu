@@ -32,6 +32,18 @@ __global__ static void f_interpolate(
 }
 #endif
 
+__global__ static void f_pack2R2C(cufftComplex* d, float* L, float* R, size_t n)
+{
+	auto stride = gridDim * blockDim;
+	auto offset = blockDim * blockIdx + threadIdx;
+
+
+	for (auto s = offset.x; s < n; s += stride.x)
+	{
+		d[s] = { L[s], R[s] };
+	}
+}
+
 __global__ static void f_unpackC22R(cufftComplex* L, cufftComplex* R, const cufftComplex* src, size_t fftSize)
 {
 	auto stride = gridDim * blockDim;
@@ -204,20 +216,41 @@ void Convolution::prepare(size_t idx, const WavFile& wav, size_t nframes)
 	auto buf = _irBuffers[idx];
 	if (buf) cudaFree(buf);
 
+	cufftComplex* tmp = nullptr;
+
+#if 1
+#define CONV_PREP_INPLACE 0
+#define CONV_PREP_SRC tmp
+	// Trying to solve a bug with certain fftSizes
+	rc = cudaMalloc(&CONV_PREP_SRC, sizeof(cufftComplex) * (_fftSize));
+	assert(cudaSuccess == rc);
+
+	rc = cudaMemset(CONV_PREP_SRC, 0, sizeof(cufftComplex) * _fftSize);
+	assert(cudaSuccess == rc);
+#else
+#define CONV_PREP_INPLACE 1
+#define CONV_PREP_SRC buf
+#endif
 	// TODO pack real fft into half size buffer
 	rc = cudaMalloc(&buf, sizeof(cufftComplex) * (_fftSize << 1));
 	assert(cudaSuccess == rc);
-	
+
+#if !CONV_PREP_INPLACE
+	cudaDeviceSynchronize();
+#endif
 	auto n = min(wav.numFrames, _fftSize - nframes);
-	rc = cudaMemcpyAsync(buf, wav.buffer, sizeof(cufftComplex) * n, cudaMemcpyDeviceToDevice, stream);
+	rc = cudaMemcpyAsync(CONV_PREP_SRC, wav.buffer, sizeof(cufftComplex) * n, cudaMemcpyDeviceToDevice, stream);
 	assert(cudaSuccess == rc);
 	
-	rc = cufftExecC2C(_plan, buf, buf, CUFFT_FORWARD);
+	rc = cufftExecC2C(_plan, CONV_PREP_SRC, CONV_PREP_SRC, CUFFT_FORWARD);
 	assert(cudaSuccess == rc);
 	
-	f_unpackC22R <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, stream >>> (buf, buf+_fftSize, buf,  _fftSize);
+	f_unpackC22R <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, stream >>> (buf, buf+_fftSize, CONV_PREP_SRC,  _fftSize);
 
 	cudaStreamSynchronize(stream);
+#if !CONV_PREP_INPLACE
+	cudaFree(CONV_PREP_SRC);
+#endif
 	_irBuffers[idx] = buf;
 }
 
@@ -271,6 +304,7 @@ void Convolution::onProcess(size_t nframes)
 	cudaEventRecord(started, _streams[0]);
 	cufftSetStream(_plan, _streams[0]);
 
+#if 0
 	// copy input to device
 	rc = cudaMemcpy2DAsync(
 			cin,  sizeof(cufftComplex), 
@@ -285,6 +319,16 @@ void Convolution::onProcess(size_t nframes)
 			sizeof(float), nframes,
 			cudaMemcpyHostToDevice, _streams[1]);
 	assert(cudaSuccess == rc);
+#else
+	rc = cudaMemcpyAsync(cin1, IN1, sizeof(float) * nframes, cudaMemcpyHostToDevice, _streams[1]);
+	assert(cudaSuccess == rc);
+	rc = cudaMemcpyAsync(cin2, IN2, sizeof(float) * nframes, cudaMemcpyHostToDevice, _streams[1]);
+	assert(cudaSuccess == rc);
+
+	rc = cudaMemsetAsync(cin, 0, sizeof(cufftComplex) * _fftSize, _streams[1]);
+	assert(cudaSuccess == rc);
+	f_pack2R2C <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[1] >>> (cin, (float*)cin1, (float*)cin2, nframes);
+#endif
 
 #if CONV_INTERPOLATE
 #define CONV_IRFFT1L irFFT1.left
@@ -318,8 +362,9 @@ void Convolution::onProcess(size_t nframes)
 
 #endif
 
-	cudaStreamSynchronize(_streams[1]);
-	
+	rc = cudaStreamSynchronize(_streams[1]);
+	assert(cudaSuccess == rc);
+
 	// get FFT of input
 	rc = cufftExecC2C(_plan, cin, cinFFT, CUFFT_FORWARD);
 	assert(cudaSuccess == rc);

@@ -8,14 +8,16 @@
 # IF YOU CHANGE conv[x].index, don't forget to make sure
 # conv[x].value.select is in range. (Can be 0)
 
-# conv[n].fftSize isn't used yet.
+# Suggestions
+# conv[n].fftSize for nano: 98304
+# conv[n].fftSize for xavier nx: 131072
 
 # NUMBER OF CONVOLUTIONS
 # Must be a multiple of 2
 conv.count 2
 
 # CONVOLUTION LEFT
-conv[0].fftSize 	131072
+conv[0].fftSize 	65536
 conv[0].maxPredelay	8192
 conv[0].index		./ir/all.index
 conv[0].input		system:capture_1
@@ -44,7 +46,7 @@ conv[0].value.panWet 	0
 conv[0].value.level  	1.0
 
 # CONVOLUTION RIGHT
-conv[1].fftSize		131072
+conv[1].fftSize		65536
 conv[1].maxPredelay 	8192
 conv[1].index		./ir/all.index
 conv[1].input		system:capture_2

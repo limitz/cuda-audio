@@ -31,8 +31,12 @@ int main(int argc, char** argv)
 	Convolution** instances = new Convolution*[numInstances];
 	for (auto n=0UL; n < numInstances; n++)
 	{
+		auto fs1 = settings.u32("conv[%d].fftSize", n * 2 + 0);
+		auto fs2 = settings.u32("conv[%d].fftSize", n * 2 + 1);
+		assert(fs1 == fs2 && "Convolution pair needs identical fft sizes");
+		
 		auto name = std::string("cudaconv_") + char('0' + n + 1);
-		auto c = instances[n] = new Convolution(name);
+		auto c = instances[n] = new Convolution(name,fs1);
 		for (int i=0; i < 2; i++)
 		{
 			int idx = n * 2 + i;

@@ -61,7 +61,7 @@ public:
 	virtual void onStart() override;
 	inline double avgRuntime() const { return _nruns ? _runtime / _nruns : 0; }
 
-	void prepare(size_t idx, const WavFile& wav, size_t nframes = 512);
+	void prepare(size_t idx, const WavFile& wav, size_t nframes = 1024);
 
 	virtual void onMidiMessage(const RawMidi::Device* sender, const uint8_t *buffer, size_t len) override;
 
