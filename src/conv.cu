@@ -142,7 +142,6 @@ __global__ static void f_addDryInterleaved(
 Convolution::Convolution(const std::string& name, size_t fftSize) : 
 	JackClient(name),
 	_fftSize(fftSize),
-	midiIn(nullptr),
 	capture{nullptr},
 	playback{nullptr}
 {
@@ -198,7 +197,6 @@ Convolution::Convolution(const std::string& name, size_t fftSize) :
 void Convolution::onStart()
 {
 	activate();
-	midiIn = addInput("midi_in", JACK_DEFAULT_MIDI_TYPE);
 	playback[0] = addOutput("playback_1");
 	playback[1] = addOutput("playback_2");
 	capture[0] = addInput("capture_1");

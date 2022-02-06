@@ -53,7 +53,6 @@ public:
 	~Convolution() {}
 	// TODO make destructor that destroys all buffers
 
-	JackPort midiIn;
 	JackPort capture[2];
 	JackPort playback[2];
 

@@ -24,7 +24,7 @@ conv[0].input		system:capture_1
 conv[0].output		system:playback_1
 
 # CONVOLUTION LEFT: MIDI MAPPING
-conv[0].cc.device	hw:1,0
+conv[0].cc.device	hw:2,0
 conv[0].cc.message	176
 conv[0].cc.select	21
 conv[0].cc.predelay	22
@@ -53,7 +53,7 @@ conv[1].input		system:capture_2
 conv[1].output		system:playback_2
 
 # CONVOLUTION RIGHT: MIDI MAPPING
-conv[1].cc.device	hw:1,0
+conv[1].cc.device	hw:2,0
 conv[1].cc.message	176
 conv[1].cc.select	21
 conv[1].cc.predelay	22
