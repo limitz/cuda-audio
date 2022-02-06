@@ -4,6 +4,7 @@
 #include <sstream>
 #include <fstream>
 #include <vector>
+#include <map>
 #include "gpu.h"
 #include "wav.h"
 #include "jackclient.h"
@@ -25,6 +26,8 @@ int main(int argc, char** argv)
 	assert(0 == (numInstances % 2) && "conv.count must be a multiple of 2");
 	numInstances /= 2;
 
+	std::map<std::string, RawMidi::Device*> midiDevices;
+
 	Convolution** instances = new Convolution*[numInstances];
 	for (auto n=0UL; n < numInstances; n++)
 	{
@@ -33,6 +36,17 @@ int main(int argc, char** argv)
 		for (int i=0; i < 2; i++)
 		{
 			int idx = n * 2 + i;
+			
+			auto deviceId = settings.str("conv[%d].cc.device", idx);
+			if (deviceId.size())
+			{
+				auto& mappedDevice = midiDevices[deviceId];
+				if (!mappedDevice) mappedDevice = new RawMidi::Device(deviceId);
+				c->cc[i].device = mappedDevice;
+				// OK, so this needs some work
+				// Only allows the same controller per pair of convolutions.
+				c->cc[i].device->handler = c;
+			}
 			c->cc[i].message   = settings.u8("conv[%d].cc.message", idx);
 			c->cc[i].select    = settings.u8("conv[%d].cc.select", idx);
 			c->cc[i].predelay  = settings.u8("conv[%d].cc.predelay", idx);
@@ -69,18 +83,9 @@ int main(int argc, char** argv)
 			auto outputPort = settings.str("conv[%d].output", idx);
 			jack_connect(c->handle, inputPort.c_str(), jack_port_name(c->capture[i]));
 			jack_connect(c->handle, jack_port_name(c->playback[i]), outputPort.c_str());
+			auto d = c->cc[i].device;
+			if (d && !d->isOpen) d->start();
 		}
-
-		// Auto connect all MIDI ports
-		#if 0
-		auto midiports = jack_get_ports(c->handle, NULL, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput);
-		for (auto midiport = midiports; *midiport; midiport++)
-		{
-			Log::info(__func__, "Found MIDI port: %s", *midiport);
-			jack_connect(c->handle, *midiport, jack_port_name(c->midiIn));
-		}
-		jack_free(midiports);
-		#endif
 	}
 
 	std::cin.get();
@@ -88,10 +93,19 @@ int main(int argc, char** argv)
 	for (auto i=0UL; i < numInstances; i++)
 	{
 		auto c = instances[i];
+		for (auto n=0UL; n<2; n++)
+		{
+			auto d = c->cc[i].device;
+			if (d && d->isOpen) d->stop();
+		}
 		if (c->isRunning()) c->stop();
 		Log::info(c->name, "Average convolution runtime: %f", c->avgRuntime());
 		delete c;
 	}
+
+	// TODO:
+	// delete all midi device pointers in midiDevices map
+
 	delete[] instances;
 
 	return 0;

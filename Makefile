@@ -7,7 +7,7 @@ ifeq ($(PROC), x86_64)
 CFLAGS := -std=c++17 -O3 -fPIC -Wall
 IFLAGS := -I/usr/local/cuda/include
 LFLAGS := -rpath='$$ORIGIN'
-LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack
+LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack -lasound
 SMS := 53 61 86
 HIGHEST_SM = $(lastword $(sort $(SMS)))
 NVCCFLAGS := -m64 -rdc=true -std=c++17 
@@ -22,7 +22,7 @@ CFLAGS := -O3 -fPIC -Wall -DCONV_FFTSIZE=98304 -DCONV_GRIDSIZE=64 -DCONV_BLOCKSI
 #CFLAGS := -O3 -fPIC -Wall -DCONV_FFTSIZE=98304 -DCONV_GRIDSIZE=256 -DCONV_BLOCKSIZE=256
 IFLAGS := -I/usr/local/cuda/include
 LFLAGS := -rpath='$$ORIGIN'
-LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack
+LFLAGS += -L/usr/local/cuda/lib64 -lcudart -lcufft -ljack -lasound
 SMS := 53 72 
 HIGHEST_SM = $(lastword $(sort $(SMS)))
 NVCCFLAGS := -m64 -rdc=true 

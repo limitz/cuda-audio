@@ -5,6 +5,7 @@
 #include "gpu.h"
 #include "wav.h"
 #include "jackclient.h"
+#include "midi.h"
 
 #ifndef CONV_FFTSIZE
 #define CONV_FFTSIZE (512 * 256)
@@ -26,11 +27,12 @@
 #define CONV_MAX_PREDELAY 8192
 #endif
 
-class Convolution : public JackClient
+class Convolution : public JackClient, public RawMidi::MessageHandler
 {
 public:
 	struct CC
 	{
+		RawMidi::Device* device;
 		uint8_t message;
 		uint8_t select, predelay, dry, wet, speed, panDry, panWet, level;
 		struct
@@ -48,7 +50,7 @@ public:
 	} cc[2];
 
 	Convolution(const std::string& name = "Conv", uint8_t ccMessage = 0xB0, uint8_t ccStart = 0x15, size_t fftSize = CONV_FFTSIZE);
-	
+	~Convolution() {}
 	// TODO make destructor that destroys all buffers
 
 	JackPort midiIn;
@@ -60,6 +62,8 @@ public:
 	inline double avgRuntime() const { return _nruns ? _runtime / _nruns : 0; }
 
 	void prepare(size_t idx, const WavFile& wav, size_t nframes = 512);
+
+	virtual void onMidiMessage(const RawMidi::Device* sender, const uint8_t *buffer, size_t len) override;
 
 private:
 	cufftHandle _plan;

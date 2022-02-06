@@ -264,6 +264,15 @@ static void handleCC(Convolution::CC& cc, uint8_t m1, uint8_t m2, int v, size_t 
 	}
 }
 
+void Convolution::onMidiMessage(const RawMidi::Device* sender, const uint8_t* buffer, size_t len)
+{
+	if (len >= 3)
+	{
+		if (cc[0].device == sender) handleCC(cc[0], buffer[0], buffer[1], buffer[2], _irBuffers.size());
+		if (cc[1].device == sender) handleCC(cc[1], buffer[0], buffer[1], buffer[2], _irBuffers.size());
+	}
+}
+
 void Convolution::onProcess(size_t nframes)
 {
 	int rc;
