@@ -7,8 +7,8 @@
 #include "jackclient.h"
 #include "midi.h"
 
-#ifndef CONV_FFTSIZE
-#define CONV_FFTSIZE (512 * 256)
+#ifndef CONV_DEFAULT_FFTSIZE
+#define CONV_DEFAULT_FFTSIZE (512 * 256)
 #endif
 
 #ifndef CONV_GRIDSIZE
@@ -49,7 +49,7 @@ public:
 		} value;
 	} cc[2];
 
-	Convolution(const std::string& name = "Conv", uint8_t ccMessage = 0xB0, uint8_t ccStart = 0x15, size_t fftSize = CONV_FFTSIZE);
+	Convolution(const std::string& name = "Conv", size_t fftSize = CONV_DEFAULT_FFTSIZE);
 	~Convolution() {}
 	// TODO make destructor that destroys all buffers
 

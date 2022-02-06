@@ -127,7 +127,7 @@ __global__ static void f_addDryInterleaved(
 	}
 }
 
-Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccStart, size_t fftSize) : 
+Convolution::Convolution(const std::string& name, size_t fftSize) : 
 	JackClient(name),
 	_fftSize(fftSize),
 	midiIn(nullptr),
@@ -181,26 +181,6 @@ Convolution::Convolution(const std::string& name, uint8_t ccMessage, uint8_t ccS
 			onembed, ostride, odist,
 			CUFFT_C2C, batchSize);
 	assert(0 == rc);
-
-	cc[0].message  = ccMessage;
-	cc[0].select   = ccStart;
-	cc[0].predelay = ccStart + 1;
-	cc[0].dry      = ccStart + 2;
-	cc[0].wet      = ccStart + 3;
-	cc[0].speed   = ccStart + 4;
-	cc[0].panDry   = ccStart + 5;
-	cc[0].panWet  = ccStart + 6;
-	cc[0].level  = ccStart + 7;
-	
-	cc[1].message  = ccMessage + 1;
-	cc[1].select   = ccStart;
-	cc[1].predelay = ccStart + 1;
-	cc[1].dry      = ccStart + 2;
-	cc[1].wet      = ccStart + 3;
-	cc[1].speed   = ccStart + 4;
-	cc[1].panDry   = ccStart + 5;
-	cc[1].panWet  = ccStart + 6;
-	cc[1].level  = ccStart + 7;
 }
 
 void Convolution::onStart()
