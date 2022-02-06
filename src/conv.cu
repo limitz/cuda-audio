@@ -258,7 +258,7 @@ static void handleCC(Convolution::CC& cc, uint8_t m1, uint8_t m2, int v, size_t 
 		if (cc.level == m2) cc.value.level = v / 128.0f;
 		if (cc.speed == m2) 
 		{
-			cc.value.speed = v * CONV_MAX_SPEED / 0x80;
+			cc.value.speed = (v * CONV_MAX_SPEED) / 0x80;
 			if (cc.value.vsteps > cc.value.speed) cc.value.vsteps = cc.value.speed;
 		}
 	}
@@ -283,28 +283,8 @@ void Convolution::onProcess(size_t nframes)
 	auto R = playback[1] ? jack_port_get_buffer(playback[1], nframes) : nullptr;
 
 
-#if 0
-	auto midi = midiIn ? jack_port_get_buffer(midiIn, nframes) : nullptr;
-	if (!midi) return;
-#endif
 	if (!IN1 || !IN2 || !L || !R) return;
-#if 0
-	auto nevts = jack_midi_get_event_count(midi);
-	for (auto i=0UL;i<nevts; i++)
-	{
-		jack_midi_event_t evt;
-		rc = jack_midi_event_get(&evt, midi, i);
-		assert(0 == rc);
-		
-		handleCC(cc[0], evt.buffer[0], evt.buffer[1], evt.buffer[2], _irBuffers.size());
-		handleCC(cc[1], evt.buffer[0], evt.buffer[1], evt.buffer[2], _irBuffers.size());
-
-#if 0
-		for (auto c=0; c<evt.size; c++) std::cout << std::hex << (int)evt.buffer[c] << " ";
-		std::cout << std::endl;
-#endif
-	}
-#endif
+	
 	cudaEvent_t started, stopped;
 	cudaEventCreate(&started);
 	cudaEventCreate(&stopped);
@@ -367,6 +347,7 @@ void Convolution::onProcess(size_t nframes)
 	f_unpackC22R <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			cin1, cin2, cinFFT, _fftSize);
 
+#if 0 // TODO this interferes with the interpolate above
 #if CONV_LOWPASS
 	f_lowpass <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			CONV_IRFFT1L, CONV_IRFFT1L, _fftSize);
@@ -376,6 +357,7 @@ void Convolution::onProcess(size_t nframes)
 			CONV_IRFFT2L, CONV_IRFFT2L, _fftSize);
 	f_lowpass <<< CONV_GRIDSIZE, CONV_BLOCKSIZE, 0, _streams[0] >>> (
 			CONV_IRFFT2R, CONV_IRFFT2R, _fftSize);
+#endif
 #endif
 	// multiply ir with input
 	float panL1 = cc[0].value.panWet >= 0 ? 1 - cc[0].value.panWet : 1;

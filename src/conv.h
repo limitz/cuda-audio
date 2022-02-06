@@ -20,7 +20,7 @@
 #endif
 
 #ifndef CONV_MAX_SPEED
-#define CONV_MAX_SPEED 512
+#define CONV_MAX_SPEED 1024
 #endif
 
 #ifndef CONV_MAX_PREDELAY
