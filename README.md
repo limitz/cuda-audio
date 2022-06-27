@@ -1,4 +1,7 @@
 # CUDA Audio Convolution Reverb
+
+https://hackaday.io/project/183681-jetson-nano-convolution-reverb
+
 Real-time convolution reverb using impulse response audio files. 
 See settings.txt for configuration
 
